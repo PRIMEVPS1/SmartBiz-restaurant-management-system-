@@ -6,16 +6,8 @@ import toast from 'react-hot-toast'
 import LogoMark from '../components/Logo'
 import './LoginPage.css'
 
-const ROLES = [
-  { key: 'owner',      icon: '👑', label: 'Owner' },
-  { key: 'cashier',    icon: '💵', label: 'Cashier' },
-  { key: 'kitchen',    icon: '👨‍🍳', label: 'Kitchen' },
-  { key: 'waiter',     icon: '🛎️', label: 'Waiter' },
-]
-
 export default function LoginPage() {
   const navigate = useNavigate()
-  const [role, setRole]       = useState('owner')
   const [email, setEmail]     = useState('')
   const [password, setPass]   = useState('')
   const [loading, setLoading] = useState(false)
@@ -37,7 +29,7 @@ export default function LoginPage() {
         navigate(isAdmin ? '/admin' : '/register')
         return
       }
-      navigate('/dashboard')
+      navigate('/')
     } catch (err) {
       toast.error(err.message || 'Login failed')
     } finally {
@@ -63,21 +55,6 @@ export default function LoginPage() {
 
         <h1 className="login-title">Welcome back 👋</h1>
         <p className="login-sub">Sign in to your workspace to manage your business.</p>
-
-        <div className="roles-label">Select your role</div>
-        <div className="roles">
-          {ROLES.map(r => (
-            <button
-              key={r.key}
-              className={`role-btn ${role === r.key ? 'active' : ''}`}
-              onClick={() => setRole(r.key)}
-              type="button"
-            >
-              <span className="role-icon">{r.icon}</span>
-              {r.label}
-            </button>
-          ))}
-        </div>
 
         <form onSubmit={handleLogin}>
           <div className="fg">
