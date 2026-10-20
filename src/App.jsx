@@ -29,6 +29,7 @@ import CustomerMenu     from './pages/CustomerMenu'
 import RegisterPage     from './pages/RegisterPage'
 import AdminPage        from './pages/AdminPage'
 import InstallPrompt    from './components/InstallPrompt'
+import { canAccess, homeFor } from './lib/permissions'
 
 function ProtectedRoute({ children, ready, requireTenant = true }) {
   const user   = useStore(s => s.user)
@@ -37,6 +38,20 @@ function ProtectedRoute({ children, ready, requireTenant = true }) {
   if (!user) return <Navigate to="/login" replace />
   if (requireTenant && !tenant) return <Navigate to="/register" replace />
   return children
+}
+
+// Role ට අවසර නැති page එකකට URL එකෙන් ආවොත් ඒ role එකේ home page එකට යවනවා
+function RoleRoute({ path, children }) {
+  const role = useStore(s => s.staff?.role)
+  if (!role) return <div style={{ padding: 40, textAlign: 'center', color: '#9aa7bd' }}>Loading...</div>
+  if (!canAccess(role, path)) return <Navigate to={homeFor(role)} replace />
+  return children
+}
+
+function HomeRedirect() {
+  const role = useStore(s => s.staff?.role)
+  if (!role) return null
+  return <Navigate to={homeFor(role)} replace />
 }
 
 export default function App() {
@@ -109,25 +124,25 @@ export default function App() {
         <Route path="/" element={
           <ProtectedRoute ready={ready}><AppShell /></ProtectedRoute>
         }>
-          <Route index                   element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard"        element={<Dashboard />} />
-          <Route path="tables"           element={<TablesPage />} />
-          <Route path="orders"           element={<OrdersPage />} />
-          <Route path="orders/:id"       element={<OrdersPage />} />
-          <Route path="kitchen"          element={<KitchenPage />} />
-          <Route path="pos"              element={<BillingPage />} />
-          <Route path="pos/:orderId"     element={<BillingPage />} />
-          <Route path="menu"             element={<MenuPage />} />
-          <Route path="modifiers"        element={<ModifiersPage />} />
-          <Route path="rooms"            element={<RoomsPage />} />
-          <Route path="reservations"     element={<ReservationsPage />} />
-          <Route path="inventory"        element={<InventoryPage />} />
-          <Route path="staff"            element={<StaffPage />} />
-          <Route path="customers"        element={<CustomersPage />} />
-          <Route path="reports"          element={<ReportsPage />} />
-          <Route path="settings"         element={<SettingsPage />} />
-          <Route path="voids"            element={<VoidsPage />} />
-          <Route path="cash-drawer"      element={<CashDrawerPage />} />
+          <Route index                   element={<HomeRedirect />} />
+          <Route path="dashboard"        element={<RoleRoute path="/dashboard"><Dashboard /></RoleRoute>} />
+          <Route path="tables"           element={<RoleRoute path="/tables"><TablesPage /></RoleRoute>} />
+          <Route path="orders"           element={<RoleRoute path="/orders"><OrdersPage /></RoleRoute>} />
+          <Route path="orders/:id"       element={<RoleRoute path="/orders"><OrdersPage /></RoleRoute>} />
+          <Route path="kitchen"          element={<RoleRoute path="/kitchen"><KitchenPage /></RoleRoute>} />
+          <Route path="pos"              element={<RoleRoute path="/pos"><BillingPage /></RoleRoute>} />
+          <Route path="pos/:orderId"     element={<RoleRoute path="/pos"><BillingPage /></RoleRoute>} />
+          <Route path="menu"             element={<RoleRoute path="/menu"><MenuPage /></RoleRoute>} />
+          <Route path="modifiers"        element={<RoleRoute path="/modifiers"><ModifiersPage /></RoleRoute>} />
+          <Route path="rooms"            element={<RoleRoute path="/rooms"><RoomsPage /></RoleRoute>} />
+          <Route path="reservations"     element={<RoleRoute path="/reservations"><ReservationsPage /></RoleRoute>} />
+          <Route path="inventory"        element={<RoleRoute path="/inventory"><InventoryPage /></RoleRoute>} />
+          <Route path="staff"            element={<RoleRoute path="/staff"><StaffPage /></RoleRoute>} />
+          <Route path="customers"        element={<RoleRoute path="/customers"><CustomersPage /></RoleRoute>} />
+          <Route path="reports"          element={<RoleRoute path="/reports"><ReportsPage /></RoleRoute>} />
+          <Route path="settings"         element={<RoleRoute path="/settings"><SettingsPage /></RoleRoute>} />
+          <Route path="voids"            element={<RoleRoute path="/voids"><VoidsPage /></RoleRoute>} />
+          <Route path="cash-drawer"      element={<RoleRoute path="/cash-drawer"><CashDrawerPage /></RoleRoute>} />
         </Route>
       </Routes>
     </BrowserRouter>
