@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import toast, { Toaster } from 'react-hot-toast'
 import { useStore } from './store/useStore'
@@ -28,37 +28,52 @@ import CashDrawerPage   from './pages/CashDrawerPage'
 import CustomerMenu     from './pages/CustomerMenu'
 import RegisterPage     from './pages/RegisterPage'
 import AdminPage        from './pages/AdminPage'
+import InstallPrompt    from './components/InstallPrompt'
 
-function ProtectedRoute({ children }) {
-  const user = useStore(s => s.user)
+function ProtectedRoute({ children, ready, requireTenant = true }) {
+  const user   = useStore(s => s.user)
+  const tenant = useStore(s => s.tenant)
+  if (!ready) return <div style={{ padding: 40, textAlign: 'center', color: '#9aa7bd' }}>Loading...</div>
   if (!user) return <Navigate to="/login" replace />
+  if (requireTenant && !tenant) return <Navigate to="/register" replace />
   return children
 }
 
 export default function App() {
   const { setUser, setStaff, setOnline } = useStore()
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setUser(session?.user ?? null)
-        if (session?.user) {
-          const { data } = await supabase
-            .from('staff').select('*, tenants(*)')
-            .eq('auth_id', session.user.id).single()
-          if (data) {
-            if (data.tenants && data.tenants.active === false) {
-              toast.error('This restaurant account is suspended. Contact SmartBiz support.')
-              await supabase.auth.signOut()
-              useStore.getState().logout()
-              return
-            }
-            setStaff(data)
-            useStore.getState().setTenant(data.tenants)
-          }
-        }
+    async function loadStaff(session) {
+      const st = useStore.getState()
+      st.setUser(session?.user ?? null)
+      if (!session?.user) { st.setStaff(null); st.setTenant(null); return }
+      const { data, error } = await supabase
+        .from('staff').select('*, tenants(*)')
+        .eq('auth_id', session.user.id).maybeSingle()
+      if (error) console.error('staff load error', error)
+      if (!data) { st.setStaff(null); st.setTenant(null); return }
+      if (!data.tenants) {
+        toast.error('Restaurant data blocked. Run the Supabase SQL patches (02 and 04).')
+        st.setStaff(data); st.setTenant(null); return
       }
-    )
+      if (data.tenants.active === false) {
+        toast.error('This restaurant account is suspended. Contact SmartBiz support.')
+        await supabase.auth.signOut()
+        st.logout()
+        return
+      }
+      st.setStaff(data)
+      st.setTenant(data.tenants)
+    }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // defer to avoid deadlock inside the auth callback
+      setTimeout(async () => { await loadStaff(session); setReady(true) }, 0)
+    })
+    // fallback in case no initial event fires
+    supabase.auth.getSession().then(async ({ data }) => { await loadStaff(data.session); setReady(true) })
+
     const onOnline  = () => setOnline(true)
     const onOffline = () => setOnline(false)
     window.addEventListener('online',  onOnline)
@@ -85,13 +100,14 @@ export default function App() {
           error:   { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
         }}
       />
+      <InstallPrompt />
       <Routes>
         <Route path="/login"          element={<LoginPage />} />
         <Route path="/register"       element={<RegisterPage />} />
-        <Route path="/admin"          element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+        <Route path="/admin"          element={<ProtectedRoute ready={ready} requireTenant={false}><AdminPage /></ProtectedRoute>} />
         <Route path="/menu/:qrToken"  element={<CustomerMenu />} />
         <Route path="/" element={
-          <ProtectedRoute><AppShell /></ProtectedRoute>
+          <ProtectedRoute ready={ready}><AppShell /></ProtectedRoute>
         }>
           <Route index                   element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard"        element={<Dashboard />} />
