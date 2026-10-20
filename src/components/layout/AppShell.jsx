@@ -4,6 +4,7 @@ import LogoMark from '../Logo'
 import { useStore } from '../../store/useStore'
 import { supabase } from '../../lib/supabase'
 import toast from 'react-hot-toast'
+import { canAccess } from '../../lib/permissions'
 import './AppShell.css'
 
 const NAV = [
@@ -41,6 +42,11 @@ export default function AppShell() {
     toast.success('Logged out successfully')
   }
 
+  // Role ට අවසර නැති menu items සැඟවීම (හිස් section ත් අයින් වෙනවා)
+  const visibleNav = NAV
+    .filter(item => item.section || canAccess(staff?.role, item.path))
+    .filter((item, i, arr) => !item.section || (arr[i + 1] && !arr[i + 1].section))
+
   const initials = staff?.name
     ? staff.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
     : 'SB'
@@ -75,7 +81,7 @@ export default function AppShell() {
         )}
 
         <nav className="sb-nav">
-          {NAV.map((item, i) => {
+          {visibleNav.map((item, i) => {
             if (item.section) return <div key={i} className="sb-section">{item.section}</div>
             const active = location.pathname === item.path ||
               (item.path !== '/dashboard' && location.pathname.startsWith(item.path))
