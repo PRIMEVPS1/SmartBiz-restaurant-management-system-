@@ -1,0 +1,12 @@
+.void-list { display:flex; flex-direction:column; gap:10px; padding:0 24px 24px; }
+.void-card { background:var(--s1); border:1px solid var(--border); border-radius:var(--r); padding:16px 18px; display:flex; justify-content:space-between; gap:16px; transition:all .2s; }
+.void-card:hover { border-color:var(--border2); }
+.void-card-left { display:flex; flex-direction:column; gap:5px; flex:1; }
+.void-order { font-size:14px; font-weight:600; }
+.void-item  { font-size:12px; color:var(--t2); }
+.void-reason{ font-size:12px; color:var(--t3); font-style:italic; }
+.void-card-right { text-align:right; flex-shrink:0; }
+.void-amount { font-family:'Syne',sans-serif; font-weight:700; font-size:16px; color:var(--red); margin-bottom:4px; }
+.void-date  { font-size:11px; color:var(--t2); margin-bottom:2px; }
+.void-staff { font-size:11px; color:var(--t3); }
+@media(max-width:640px){ .void-card{flex-direction:column;} .void-card-right{text-align:left;} }

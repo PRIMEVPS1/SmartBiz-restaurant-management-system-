@@ -1,0 +1,38 @@
+.mod-layout { display:grid; grid-template-columns:280px 1fr; min-height:calc(100vh - 140px); }
+.mod-groups-panel { border-right:1px solid var(--border); padding:16px; }
+.mod-panel-title { font-size:11px; text-transform:uppercase; letter-spacing:1.5px; color:var(--t3); margin-bottom:12px; padding:0 4px; }
+.mod-empty-panel { padding:40px 16px; text-align:center; }
+.mod-group-item { display:flex; align-items:center; gap:10px; padding:12px 10px; border-radius:var(--rs); cursor:pointer; transition:all .15s; margin-bottom:4px; }
+.mod-group-item:hover { background:var(--s2); }
+.mod-group-item.active { background:var(--accent-s); border:1px solid rgba(41,182,246,0.3); }
+.mod-group-info { flex:1; }
+.mod-group-name { font-size:13.5px; font-weight:600; margin-bottom:3px; }
+.mod-group-meta { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
+.mod-group-actions { display:flex; gap:4px; opacity:0; transition:opacity .15s; }
+.mod-group-item:hover .mod-group-actions { opacity:1; }
+.mod-badge { padding:2px 7px; border-radius:20px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
+.mod-badge.req   { background:rgba(239,68,68,0.15);  color:var(--red); }
+.mod-badge.multi { background:rgba(96,165,250,0.15); color:var(--blue); }
+.mod-badge       { background:var(--s2); color:var(--t2); }
+.mod-detail-panel { padding:24px; }
+.mod-detail-head  { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:20px; gap:16px; }
+.mod-detail-title { font-family:'Syne',sans-serif; font-weight:700; font-size:18px; margin-bottom:4px; }
+.mod-detail-meta  { font-size:12px; color:var(--t2); }
+.mod-options-list { background:var(--s1); border:1px solid var(--border); border-radius:var(--r); overflow:hidden; margin-bottom:20px; }
+.mod-option-row { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); }
+.mod-option-row:last-child { border-bottom:none; }
+.mod-option-info { flex:1; display:flex; align-items:center; gap:8px; }
+.mod-option-name { font-size:13.5px; font-weight:500; }
+.mod-price-delta { font-family:'Syne',sans-serif; font-size:13px; font-weight:700; min-width:60px; text-align:right; }
+.mod-price-delta.plus  { color:var(--red); }
+.mod-price-delta.minus { color:var(--green); }
+.mod-price-delta       { color:var(--t3); }
+.mod-link-section { background:var(--s1); border:1px solid var(--border); border-radius:var(--r); padding:16px; }
+.mod-link-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.mod-link-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; max-height:400px; overflow-y:auto; }
+.mod-link-item { display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--s2); border:1px solid var(--border); border-radius:var(--rs); cursor:pointer; transition:all .15s; }
+.mod-link-item:hover { border-color:var(--border2); }
+.mod-link-item.linked { background:var(--accent-s); border-color:rgba(41,182,246,0.4); }
+.mod-link-check { width:22px; height:22px; border-radius:50%; background:var(--s3); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; }
+.mod-link-item.linked .mod-link-check { background:var(--accent); border-color:var(--accent); color:#000; }
+@media(max-width:768px) { .mod-layout{grid-template-columns:1fr;} .mod-groups-panel{border-right:none; border-bottom:1px solid var(--border);} }

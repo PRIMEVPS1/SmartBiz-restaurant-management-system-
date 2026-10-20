@@ -1,0 +1,6 @@
+.rep-range-row { display:flex; gap:8px; padding:16px 24px 0; }
+.rep-body { padding:20px 24px; }
+.rep-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.rep-chart-card.span-2 { grid-column:span 2; }
+@media(max-width:900px){ .rep-grid{grid-template-columns:1fr;} .rep-chart-card.span-2{grid-column:span 1;} }
+@media(max-width:768px){ .rep-body{padding:16px;} .rep-range-row{padding:12px 16px 0;} }

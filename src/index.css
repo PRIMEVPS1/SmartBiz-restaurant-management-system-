@@ -1,0 +1,44 @@
+/* src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  /* Prevent font scaling on iOS orientation change */
+  -webkit-text-size-adjust: 100%;
+  /* Smooth scroll */
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: #0a0f16;
+  color: #f0f4ff;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  /* iOS momentum scrolling */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* PWA: hide scrollbar on mobile but keep functionality */
+@media (max-width: 768px) {
+  body::-webkit-scrollbar { display: none; }
+  body { scrollbar-width: none; }
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid #29b6f6;
+  outline-offset: 2px;
+}
+
+/* Prevent tap highlight on mobile */
+* { -webkit-tap-highlight-color: transparent; }
+
+/* Prevent text selection on UI elements */
+button, .nav-item, .role-btn { user-select: none; }
+
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; }
+input, select, textarea { font-family: inherit; }

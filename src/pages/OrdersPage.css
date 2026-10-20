@@ -1,0 +1,12 @@
+/* src/pages/OrdersPage.css */
+.order-filters { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:16px; }
+.of-btn { padding:7px 14px; border-radius:20px; border:1px solid var(--border); background:var(--s2); color:var(--t2); font-size:12.5px; font-weight:500; cursor:pointer; transition:all .18s; display:flex; align-items:center; gap:6px; }
+.of-btn:hover { border-color:var(--border2); color:var(--text); }
+.of-btn.active { border-color:var(--accent); background:var(--accent-s); color:var(--accent); }
+.of-count { background:var(--s3); font-size:10px; padding:1px 6px; border-radius:10px; }
+.action-btn { padding:5px 12px; border-radius:20px; border:none; font-size:12px; font-weight:600; cursor:pointer; transition:all .18s; font-family:'DM Sans',sans-serif; }
+.ab-blue   { background:var(--blue-s);   color:var(--blue); }
+.ab-green  { background:var(--green-s);  color:var(--green); }
+.ab-purple { background:var(--purple-s); color:var(--purple); }
+.ab-amber  { background:var(--accent-s); color:var(--accent); }
+.action-btn:hover { filter:brightness(1.2); }
