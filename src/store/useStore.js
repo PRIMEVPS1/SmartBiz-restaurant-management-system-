@@ -12,7 +12,9 @@ export const useStore = create(
       setUser: (user) => set({ user }),
       setStaff: (staff) => set({ staff }),
       setTenant: (tenant) => set({ tenant }),
-      logout: () => set({ user: null, staff: null, tenant: null }),
+      sub: null,           // subscription info (not persisted)
+      setSub: (sub) => set({ sub }),
+      logout: () => set({ user: null, staff: null, tenant: null, sub: null }),
 
       // ─── Network ────────────────────────────
       isOnline: navigator.onLine,
