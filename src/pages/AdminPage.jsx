@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { MODULES, PLAN_MODULES, enabledModules, featuresMap } from '../lib/features'
 import { uploadImage } from '../lib/image'
 import LogoMark from '../components/Logo'
+import { useStore } from '../store/useStore'
 import './AdminPage.css'
 
 const PLANS = ['free', 'pro', 'enterprise']
@@ -20,6 +21,12 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 
 export default function AdminPage() {
   const navigate = useNavigate()
+
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    useStore.getState().logout()
+    navigate('/login', { replace: true })
+  }
   const [rows, setRows]       = useState([])
   const [loading, setLoading] = useState(true)
   const [denied, setDenied]   = useState(false)
@@ -154,6 +161,7 @@ export default function AdminPage() {
         <h1>Super Admin ({rows.length})</h1>
         <button className="adm-btn pri" onClick={() => setShowNew(s => !s)}>{showNew ? '✕ Close' : '➕ New restaurant'}</button>
         <button className="adm-btn" onClick={() => navigate('/dashboard')}>← App</button>
+        <button className="adm-btn danger" onClick={handleLogout}>↩ Logout</button>
       </div>
 
       {showNew && (
