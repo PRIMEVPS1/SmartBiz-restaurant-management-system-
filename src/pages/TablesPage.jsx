@@ -1,5 +1,6 @@
 // src/pages/TablesPage.jsx
 import { useEffect, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { localGetAll, offlineWrite } from '../lib/offlineDB'
@@ -7,6 +8,7 @@ import { useStore } from '../store/useStore'
 import { isOnline } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import './TablesPage.css'
+import './QRSheet.css'
 
 const STATUS = ['all','available','occupied','reserved','cleaning']
 const STATUS_LABEL = { available:'Available', occupied:'Occupied', reserved:'Reserved', cleaning:'Cleaning' }
@@ -18,6 +20,10 @@ export default function TablesPage() {
   const [filter,  setFilter]  = useState('all')
   const [loading, setLoading] = useState(true)
   const [qrModal, setQrModal] = useState(null)
+  const [sheet,   setSheet]   = useState(null)    // tables to print as QR cards
+  const [addOpen, setAddOpen] = useState(false)
+  const [addForm, setAddForm] = useState({ number: '', capacity: 4, section: 'main', bulk: 0 })
+  const [adding,  setAdding]  = useState(false)
 
   useEffect(() => { loadTables() }, [tenant?.id])
 
@@ -89,14 +95,77 @@ export default function TablesPage() {
     }
   }
 
-  async function generateQR(table) {
-    const token = `${tenant.slug}-${table.id.slice(0,8)}`
-    const url   = `${window.location.origin}/menu/${token}`
-    setQrModal({ table, url, token })
-    // Save QR token
-    if (isOnline()) {
-      await supabase.from('restaurant_tables').update({ qr_code: token }).eq('id', table.id)
+  const tokenFor = t => t.qr_code || `${tenant.slug}-${t.id.slice(0, 8)}`
+  const urlFor   = tok => `${window.location.origin}/menu/${tok}`
+  const qrImg    = url => `https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=0&data=${encodeURIComponent(url)}`
+
+  // make sure the table's QR token is saved in the database (required for the public menu)
+  async function ensureToken(t) {
+    const token = tokenFor(t)
+    if (t.qr_code !== token) {
+      const { error } = await supabase.from('restaurant_tables').update({ qr_code: token }).eq('id', t.id)
+      if (error) throw error
+      setTables(ts => ts.map(x => x.id === t.id ? { ...x, qr_code: token } : x))
     }
+    return token
+  }
+
+  async function generateQR(table) {
+    try {
+      const token = await ensureToken(table)
+      setQrModal({ table, url: urlFor(token), token })
+    } catch (e) { toast.error('Could not save QR (check internet): ' + (e.message || '')) }
+  }
+
+  function printSheet(list) {
+    setSheet(list)
+    setTimeout(() => { window.print(); setSheet(null) }, 1200)   // wait for QR images to load
+  }
+
+  async function printOne(table) {
+    try { await ensureToken(table); printSheet([{ ...table, qr_code: tokenFor(table) }]) }
+    catch (e) { toast.error(e.message || 'Failed') }
+  }
+
+  async function printAll() {
+    if (!tables.length) return toast.error('Add tables first')
+    try {
+      const list = []
+      for (const t of tables) { await ensureToken(t); list.push({ ...t, qr_code: tokenFor(t) }) }
+      printSheet(list)
+    } catch (e) { toast.error(e.message || 'Failed') }
+  }
+
+  async function addTables(e) {
+    e.preventDefault()
+    const bulk = Number(addForm.bulk) || 0
+    let rows = []
+    if (bulk > 0) {
+      const start = tables.length
+      for (let i = 1; i <= Math.min(bulk, 100); i++) rows.push({ number: `T${start + i}` })
+    } else {
+      if (!addForm.number.trim()) return toast.error('Table name/number required')
+      rows.push({ number: addForm.number.trim() })
+    }
+    setAdding(true)
+    const payload = rows.map(r => ({
+      tenant_id: tenant.id, number: r.number, capacity: Number(addForm.capacity) || 4,
+      section: addForm.section, status: 'available',
+    }))
+    const { error } = await supabase.from('restaurant_tables').insert(payload)
+    setAdding(false)
+    if (error) return toast.error(error.message)
+    toast.success(`${payload.length} table(s) added`)
+    setAddOpen(false); setAddForm({ number: '', capacity: 4, section: 'main', bulk: 0 })
+    loadTables()
+  }
+
+  async function deleteTable(table) {
+    if (table.status !== 'available') return toast.error('Only an available table can be deleted')
+    if (!window.confirm(`Delete table ${table.number}?`)) return
+    const { error } = await supabase.from('restaurant_tables').delete().eq('id', table.id)
+    if (error) return toast.error(error.message)
+    toast.success('Table deleted'); setQrModal(null); loadTables()
   }
 
   const filtered = filter === 'all' ? tables : tables.filter(t => t.status === filter)
@@ -106,7 +175,11 @@ export default function TablesPage() {
     <div className="page-wrap">
       <div className="topbar">
         <div className="topbar-title">Tables & QR <small>Floor Plan</small></div>
-        <button className="btn btn-primary" onClick={()=>navigate('/reservations')}>📅 Reserve</button>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          <button className="btn" onClick={()=>setAddOpen(true)}>➕ Add table</button>
+          <button className="btn" onClick={printAll}>🖨️ Print all QR</button>
+          <button className="btn btn-primary" onClick={()=>navigate('/reservations')}>📅 Reserve</button>
+        </div>
       </div>
 
       <div className="tables-body">
@@ -130,7 +203,7 @@ export default function TablesPage() {
         {loading
           ? <div className="empty-state" style={{padding:'80px'}}>Loading tables...</div>
           : filtered.length === 0
-            ? <div className="empty-state" style={{padding:'80px'}}>No tables found. Add tables in Settings.</div>
+            ? <div className="empty-state" style={{padding:'80px'}}>No tables yet. Tap “➕ Add table” above.</div>
             : <div className="table-grid">
                 {filtered.map(t => (
                   <TableCard key={t.id} table={t} onOpen={openTable} onQR={generateQR} />
@@ -149,19 +222,16 @@ export default function TablesPage() {
             </div>
             <div className="modal-body" style={{textAlign:'center'}}>
               <div className="qr-display">
-                {/* QR visual placeholder — in production use a QR library */}
-                <div className="qr-box">
-                  <div style={{fontSize:'64px'}}>⬛</div>
-                  <div style={{fontSize:'11px',color:'var(--t2)',marginTop:'8px'}}>QR Code</div>
-                </div>
+                <img className="qr-img" src={qrImg(qrModal.url)} alt="QR" />
               </div>
               <div style={{marginTop:'16px',padding:'12px',background:'var(--s2)',borderRadius:'var(--rs)',fontSize:'12px',color:'var(--t2)',wordBreak:'break-all'}}>
                 {qrModal.url}
               </div>
               <div style={{display:'flex',gap:'8px',marginTop:'14px'}}>
                 <button className="btn" style={{flex:1}} onClick={()=>{navigator.clipboard.writeText(qrModal.url);toast.success('URL Copied!')}}>📋 Copy URL</button>
-                <button className="btn btn-primary" style={{flex:1}} onClick={()=>window.print()}>🖨️ Print QR</button>
+                <button className="btn btn-primary" style={{flex:1}} onClick={()=>printOne(qrModal.table)}>🖨️ Print QR</button>
               </div>
+              <button className="btn" style={{marginTop:10,width:'100%'}} onClick={()=>deleteTable(qrModal.table)}>🗑️ Delete this table</button>
               <div style={{marginTop:'12px',fontSize:'12px',color:'var(--t2)'}}>
                 Customer scans → opens menu → orders directly → Kitchen & Cashier notified automatically
               </div>
@@ -169,6 +239,43 @@ export default function TablesPage() {
           </div>
         </div>
       )}
+      {addOpen && (
+        <div className="modal-overlay" onClick={()=>setAddOpen(false)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <div className="modal-head">
+              <div className="modal-title">➕ Add table</div>
+              <button className="modal-close" onClick={()=>setAddOpen(false)}>✕</button>
+            </div>
+            <form className="modal-body" onSubmit={addTables}>
+              <div className="fg"><label className="label">Table name / number</label>
+                <input className="input" placeholder="T5" value={addForm.number} onChange={e=>setAddForm(f=>({...f,number:e.target.value}))} /></div>
+              <div className="fg"><label className="label">…or add many at once (how many?)</label>
+                <input className="input" type="number" min="0" max="100" value={addForm.bulk} onChange={e=>setAddForm(f=>({...f,bulk:e.target.value}))} /></div>
+              <div className="fg"><label className="label">Seats</label>
+                <input className="input" type="number" min="1" value={addForm.capacity} onChange={e=>setAddForm(f=>({...f,capacity:e.target.value}))} /></div>
+              <div className="fg"><label className="label">Section</label>
+                <select className="input" value={addForm.section} onChange={e=>setAddForm(f=>({...f,section:e.target.value}))}>
+                  <option value="main">Main</option><option value="outdoor">Outdoor</option>
+                  <option value="vip">VIP</option><option value="bar">Bar</option>
+                </select></div>
+              <button className="btn btn-primary" style={{width:'100%',marginTop:8}} disabled={adding}>{adding ? 'Adding...' : 'Add'}</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {sheet && createPortal(
+        <div className="qr-sheet">
+          {sheet.map(t => (
+            <div className="qr-card" key={t.id}>
+              {tenant?.logo_url && <img className="logo" src={tenant.logo_url} alt="" />}
+              <div className="qr-biz">{tenant?.name}</div>
+              <div className="qr-table">Table {t.number}</div>
+              <img className="qr" src={qrImg(urlFor(t.qr_code))} alt="QR" />
+              <div className="qr-hint">Scan to view menu &amp; order</div>
+            </div>
+          ))}
+        </div>, document.body)}
     </div>
   )
 }
