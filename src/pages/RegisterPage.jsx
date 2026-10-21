@@ -16,7 +16,20 @@ export default function RegisterPage() {
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setChecking(false) })
+    supabase.auth.getSession().then(async ({ data }) => {
+      const s = data.session
+      if (s) {
+        const { data: admin } = await supabase.rpc('is_platform_admin')
+        if (admin) { navigate('/admin', { replace: true }); return }
+        const { data: staffRow } = await supabase.from('staff').select('id').eq('auth_id', s.user.id).maybeSingle()
+        if (staffRow) {
+          toast.error('This account already has a restaurant (it may be suspended). Contact SmartBiz support.')
+          await supabase.auth.signOut(); useStore.getState().logout()
+          navigate('/login', { replace: true }); return
+        }
+      }
+      setSession(s); setChecking(false)
+    })
   }, [])
 
   async function submit(e) {
