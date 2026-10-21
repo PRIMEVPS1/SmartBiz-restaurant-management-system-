@@ -24,6 +24,8 @@ export default function TablesPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [addForm, setAddForm] = useState({ number: '', capacity: 4, section: 'main', bulk: 0 })
   const [adding,  setAdding]  = useState(false)
+  const [editT,   setEditT]   = useState(null)   // { id, number, capacity, section, status }
+  const [saving,  setSaving]  = useState(false)
 
   useEffect(() => { loadTables() }, [tenant?.id])
 
@@ -160,6 +162,20 @@ export default function TablesPage() {
     loadTables()
   }
 
+  async function saveEdit(e) {
+    e.preventDefault()
+    const number = editT.number.trim()
+    if (!number) return toast.error('Table name/number required')
+    setSaving(true)
+    const { error } = await supabase.from('restaurant_tables').update({
+      number, capacity: Number(editT.capacity) || 4, section: editT.section, status: editT.status,
+    }).eq('id', editT.id)
+    setSaving(false)
+    if (error) return toast.error(/duplicate|unique/i.test(error.message) ? `Table "${number}" already exists` : error.message)
+    toast.success('Table updated')
+    setEditT(null); setQrModal(null); loadTables()
+  }
+
   async function deleteTable(table) {
     if (table.status !== 'available') return toast.error('Only an available table can be deleted')
     if (!window.confirm(`Delete table ${table.number}?`)) return
@@ -206,7 +222,7 @@ export default function TablesPage() {
             ? <div className="empty-state" style={{padding:'80px'}}>No tables yet. Tap “➕ Add table” above.</div>
             : <div className="table-grid">
                 {filtered.map(t => (
-                  <TableCard key={t.id} table={t} onOpen={openTable} onQR={generateQR} />
+                  <TableCard key={t.id} table={t} onOpen={openTable} onQR={generateQR} onEdit={tb => setEditT({ id: tb.id, number: tb.number, capacity: tb.capacity || 4, section: tb.section || 'main', status: tb.status })} />
                 ))}
               </div>
         }
@@ -231,7 +247,10 @@ export default function TablesPage() {
                 <button className="btn" style={{flex:1}} onClick={()=>{navigator.clipboard.writeText(qrModal.url);toast.success('URL Copied!')}}>📋 Copy URL</button>
                 <button className="btn btn-primary" style={{flex:1}} onClick={()=>printOne(qrModal.table)}>🖨️ Print QR</button>
               </div>
-              <button className="btn" style={{marginTop:10,width:'100%'}} onClick={()=>deleteTable(qrModal.table)}>🗑️ Delete this table</button>
+              <div style={{display:'flex',gap:'8px',marginTop:10}}>
+                <button className="btn" style={{flex:1}} onClick={()=>{ const tb=qrModal.table; setQrModal(null); setEditT({ id: tb.id, number: tb.number, capacity: tb.capacity || 4, section: tb.section || 'main', status: tb.status }) }}>✏️ Edit table</button>
+                <button className="btn" style={{flex:1}} onClick={()=>deleteTable(qrModal.table)}>🗑️ Delete</button>
+              </div>
               <div style={{marginTop:'12px',fontSize:'12px',color:'var(--t2)'}}>
                 Customer scans → opens menu → orders directly → Kitchen & Cashier notified automatically
               </div>
@@ -264,6 +283,36 @@ export default function TablesPage() {
         </div>
       )}
 
+      {editT && (
+        <div className="modal-overlay" onClick={()=>setEditT(null)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <div className="modal-head">
+              <div className="modal-title">✏️ Edit table</div>
+              <button className="modal-close" onClick={()=>setEditT(null)}>✕</button>
+            </div>
+            <form className="modal-body" onSubmit={saveEdit}>
+              <div className="fg"><label className="label">Table name / number</label>
+                <input className="input" value={editT.number} onChange={e=>setEditT(f=>({...f,number:e.target.value}))} autoFocus /></div>
+              <div className="fg"><label className="label">Seats</label>
+                <input className="input" type="number" min="1" value={editT.capacity} onChange={e=>setEditT(f=>({...f,capacity:e.target.value}))} /></div>
+              <div className="fg"><label className="label">Section</label>
+                <select className="input" value={editT.section} onChange={e=>setEditT(f=>({...f,section:e.target.value}))}>
+                  <option value="main">Main</option><option value="outdoor">Outdoor</option>
+                  <option value="vip">VIP</option><option value="bar">Bar</option>
+                </select></div>
+              <div className="fg"><label className="label">Status</label>
+                <select className="input" value={editT.status} onChange={e=>setEditT(f=>({...f,status:e.target.value}))}>
+                  {STATUS.slice(1).map(st => <option key={st} value={st}>{STATUS_LABEL[st]}</option>)}
+                </select></div>
+              <div style={{display:'flex',gap:8,marginTop:8}}>
+                <button type="button" className="btn" style={{flex:1}} onClick={()=>{ const tb = tables.find(x=>x.id===editT.id); if (tb) { setEditT(null); deleteTable(tb) } }}>🗑️ Delete</button>
+                <button className="btn btn-primary" style={{flex:2}} disabled={saving}>{saving ? 'Saving...' : '💾 Save'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {sheet && createPortal(
         <div className="qr-sheet">
           {sheet.map(t => (
@@ -280,10 +329,11 @@ export default function TablesPage() {
   )
 }
 
-function TableCard({ table, onOpen, onQR }) {
+function TableCard({ table, onOpen, onQR, onEdit }) {
   return (
     <div className={`table-card tc-${table.status}`} onClick={() => onOpen(table)}>
       <div className="tc-qr" onClick={e=>{e.stopPropagation(); onQR(table)}} title="Generate QR">⬛</div>
+      <div className="tc-edit" onClick={e=>{e.stopPropagation(); onEdit(table)}} title="Edit table">✏️</div>
       <div className="tc-num">{table.number}</div>
       <div className={`tc-status ts-${table.status}`}>{STATUS_LABEL[table.status]}</div>
       <div className="tc-cap">👥 {table.capacity} seats</div>
