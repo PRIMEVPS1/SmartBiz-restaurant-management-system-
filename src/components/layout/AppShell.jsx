@@ -1,11 +1,13 @@
 // src/components/layout/AppShell.jsx
+import { useEffect, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import LogoMark from '../Logo'
 import { useStore } from '../../store/useStore'
 import { supabase } from '../../lib/supabase'
 import toast from 'react-hot-toast'
-import { canAccess } from '../../lib/permissions'
+import { enabledModules, moduleForPath } from '../../lib/features'
 import './AppShell.css'
+import './AppShellExtra.css'
 
 const NAV = [
   { section: 'Main' },
@@ -36,16 +38,38 @@ export default function AppShell() {
   const location  = useLocation()
   const { staff, tenant, isOnline, pendingSyncCount, sidebarOpen, setSidebarOpen } = useStore()
 
+  const [isAdmin, setIsAdmin] = useState(false)
+  const enabled = enabledModules(tenant)
+  const mod = moduleForPath(location.pathname)
+  const allowed = !mod || enabled.has(mod)
+
+  useEffect(() => {
+    if (window.innerWidth <= 768) setSidebarOpen(false)
+    supabase.rpc('is_platform_admin').then(({ data }) => setIsAdmin(!!data))
+  }, [])
+
+  function go(path) {
+    navigate(path)
+    if (window.innerWidth <= 768) setSidebarOpen(false)
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut()
+    useStore.getState().logout()
     navigate('/login')
     toast.success('Logged out successfully')
   }
 
-  // Role ට අවසර නැති menu items සැඟවීම (හිස් section ත් අයින් වෙනවා)
-  const visibleNav = NAV
-    .filter(item => item.section || canAccess(staff?.role, item.path))
-    .filter((item, i, arr) => !item.section || (arr[i + 1] && !arr[i + 1].section))
+  // hide disabled modules and empty sections
+  const visibleNav = NAV.filter((item, i) => {
+    if (item.section) {
+      for (let j = i + 1; j < NAV.length && !NAV[j].section; j++) {
+        if (enabled.has(NAV[j].path.slice(1))) return true
+      }
+      return false
+    }
+    return enabled.has(item.path.slice(1))
+  })
 
   const initials = staff?.name
     ? staff.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
@@ -66,7 +90,9 @@ export default function AppShell() {
         </div>
 
         <div className="sb-tenant">
-          <div className="sb-t-av">🏩</div>
+          {tenant?.logo_url
+            ? <img src={tenant.logo_url} alt="" className="sb-t-av" style={{ objectFit: 'contain', background: '#fff' }} />
+            : <div className="sb-t-av">🏩</div>}
           <div className="sb-t-info">
             <div className="sb-t-name">{tenant?.name || 'SmartBiz'}</div>
             <div className="sb-t-plan">{tenant?.plan || 'free'}</div>
@@ -86,12 +112,17 @@ export default function AppShell() {
             const active = location.pathname === item.path ||
               (item.path !== '/dashboard' && location.pathname.startsWith(item.path))
             return (
-              <div key={item.path} className={`nav-item ${active ? 'active' : ''}`} onClick={() => navigate(item.path)}>
+              <div key={item.path} className={`nav-item ${active ? 'active' : ''}`} onClick={() => go(item.path)}>
                 <span className="nav-icon">{item.icon}</span>
                 <span className="nav-label">{item.label}</span>
               </div>
             )
           })}
+          {isAdmin && (
+            <div className={`nav-item ${location.pathname === '/admin' ? 'active' : ''}`} onClick={() => go('/admin')}>
+              <span className="nav-icon">👑</span><span className="nav-label">Super Admin</span>
+            </div>
+          )}
         </nav>
 
         <div className="sb-foot">
@@ -101,13 +132,22 @@ export default function AppShell() {
               <div className="sb-uname">{staff?.name || 'Admin'}</div>
               <div className="sb-urole">{staff?.role || 'owner'} · {tenant?.name || ''}</div>
             </div>
-            <button className="sb-logout" onClick={handleLogout} title="Logout">↩</button>
+            <button className="sb-logout" onClick={handleLogout} title="Logout">↩ Logout</button>
           </div>
         </div>
       </aside>
 
-      <main className="main-content"><Outlet /></main>
+      <main className="main-content">
+        {allowed ? <Outlet /> : (
+          <div className="locked-box">
+            <div style={{ fontSize: 40 }}>🔒</div>
+            <h3>Not available on your plan</h3>
+            <p>This feature is turned off for your restaurant. Contact SmartBiz to enable it.</p>
+          </div>
+        )}
+      </main>
 
+      {!sidebarOpen && <button className="sb-edge" onClick={() => setSidebarOpen(true)} aria-label="Open menu">›</button>}
       {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
     </div>
   )
