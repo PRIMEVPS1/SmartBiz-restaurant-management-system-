@@ -1,0 +1,14 @@
+/* src/pages/QRSheet.css — printable table QR cards */
+.qr-sheet { display: none; }
+.qr-img { width: 240px; height: 240px; max-width: 100%; background: #fff; padding: 10px; border-radius: 12px; box-sizing: border-box; }
+@media print {
+  #root { display: none !important; }
+  body { background: #fff !important; }
+  .qr-sheet { display: grid !important; grid-template-columns: repeat(2, 1fr); gap: 10mm; padding: 10mm; color: #000; font-family: Arial, sans-serif; }
+  .qr-card { border: 2px dashed #000; border-radius: 6mm; padding: 6mm; text-align: center; page-break-inside: avoid; break-inside: avoid; }
+  .qr-card img.qr { width: 60mm; height: 60mm; }
+  .qr-card img.logo { max-height: 14mm; max-width: 40mm; object-fit: contain; display: block; margin: 0 auto 2mm; }
+  .qr-biz { font-weight: 700; font-size: 14pt; }
+  .qr-table { font-size: 22pt; font-weight: 800; margin: 2mm 0; }
+  .qr-hint { font-size: 10pt; }
+}
