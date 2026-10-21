@@ -1,6 +1,6 @@
 // src/pages/BillingPage.jsx — Full POS with Split Billing + Inventory auto-deduct
 import { createPortal } from 'react-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { localGetAll, localPut, offlineWrite } from '../lib/offlineDB'
@@ -32,6 +32,9 @@ export default function BillingPage() {
   const [byob,       setByob]      = useState(0)
   const [loading,    setLoading]   = useState(true)
   const [printing,   setPrinting]  = useState(false)
+  const scrollRef = useRef(null)
+  const secRefs   = useRef({})
+  const spyLock   = useRef(false)
 
   // Split billing state
   const [splitMode,  setSplitMode]  = useState(false)  // false | 'equal' | 'custom'
@@ -260,11 +263,36 @@ export default function BillingPage() {
   const total    = subtotal + sc + tax - (discount || 0) + corkage
   const cartTotal = cart.reduce((s, c) => s + (c.price * c.quantity), 0)
 
-  const displayMenu = menuItems.filter(m => {
-    const matchCat    = !activeCat || m.category_id === activeCat
-    const matchSearch = !search    || m.name.toLowerCase().includes(search.toLowerCase())
-    return matchCat && matchSearch
-  })
+  const sections = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    const match = m => !q || m.name.toLowerCase().includes(q) || (m.name_si || '').toLowerCase().includes(q)
+    const list = menuCats.map(c => ({ cat: c, items: menuItems.filter(m => m.category_id === c.id && match(m)) }))
+    const known = new Set(menuCats.map(c => c.id))
+    const other = menuItems.filter(m => !known.has(m.category_id) && match(m))
+    if (other.length) list.push({ cat: { id: '_other', name: 'Other', icon: '' }, items: other })
+    return list.filter(s => s.items.length)
+  }, [menuCats, menuItems, search])
+
+  function goCat(id) {
+    setActiveCat(id)
+    const box = scrollRef.current, el = secRefs.current[id]
+    if (!box || !el) return
+    spyLock.current = true
+    box.scrollTo({ top: el.offsetTop - box.offsetTop - 4, behavior: 'smooth' })
+    setTimeout(() => { spyLock.current = false }, 600)
+  }
+  function onMenuScroll() {
+    if (spyLock.current) return
+    const box = scrollRef.current
+    if (!box) return
+    let cur = null
+    for (const s of sections) {
+      const el = secRefs.current[s.cat.id]
+      if (el && el.offsetTop - box.offsetTop - 12 <= box.scrollTop) cur = s.cat.id
+    }
+    if (cur && cur !== activeCat) setActiveCat(cur)
+  }
+  const qtyInCart = id => cart.find(c => c.menu_item_id === id)?.quantity || 0
 
   if (loading) return <div className="empty-state" style={{ padding:'80px' }}>Loading POS...</div>
 
@@ -282,30 +310,42 @@ export default function BillingPage() {
         </div>
 
         <div className="menu-cats">
-          <button className={`cat-btn ${!activeCat ? 'active' : ''}`} onClick={() => setActiveCat(null)}>All</button>
-          {menuCats.map(c => (
-            <button key={c.id} className={`cat-btn ${activeCat === c.id ? 'active' : ''}`} onClick={() => setActiveCat(c.id)}>
-              {c.icon} {c.name}
+          {sections.map(sec => (
+            <button key={sec.cat.id} className={`cat-btn ${activeCat === sec.cat.id ? 'active' : ''}`} onClick={() => goCat(sec.cat.id)}>
+              {sec.cat.icon} {sec.cat.name}
             </button>
           ))}
         </div>
 
-        <div className="menu-grid">
-          {displayMenu.length === 0
-            ? <div style={{ gridColumn:'1/-1', padding:'40px', textAlign:'center', color:'var(--t2)' }}>No items found</div>
-            : displayMenu.map(item => (
-              <button key={item.id} className="menu-item-btn" onClick={() => addToCart(item)}>
-                <div className="mib-top">
-                  {item.is_veg && <span className="veg-badge">🌿</span>}
-                  <span className="mib-icon">🍽️</span>
-                </div>
-                <div className="mib-name">{item.name}</div>
-                <div className="mib-price">Rs. {Number(item.price).toLocaleString()}</div>
-                {cart.find(c => c.menu_item_id === item.id) && (
-                  <div className="mib-in-cart">{cart.find(c => c.menu_item_id === item.id)?.quantity}✓</div>
-                )}
-              </button>
-            ))}
+        <div className="pos-scroll" ref={scrollRef} onScroll={onMenuScroll}>
+          {sections.length === 0 && <div style={{ padding:'40px', textAlign:'center', color:'var(--t2)' }}>No items found</div>}
+          {sections.map(sec => (
+            <section key={sec.cat.id} ref={el => { secRefs.current[sec.cat.id] = el }} className="pos-sec">
+              <div className="pos-sec-title">{sec.cat.icon} {sec.cat.name} <small>{sec.items.length}</small></div>
+              <div className="pos-tiles">
+                {sec.items.map(item => {
+                  const q = qtyInCart(item.id)
+                  return (
+                    <button key={item.id} className={`pos-tile ${q ? 'in' : ''}`} onClick={() => addToCart(item)}>
+                      <div className="pt-photo">
+                        {item.image_url
+                          ? <img src={item.image_url} alt="" loading="lazy" onError={e => { e.target.style.display = 'none' }} />
+                          : null}
+                        <span className="pt-ph">🍽️</span>
+                        {item.badge && <span className="pt-badge">{item.badge}</span>}
+                        {item.is_veg && <span className="pt-veg" />}
+                        {q > 0 && <span className="pt-qty">{q}</span>}
+                      </div>
+                      <div className="pt-body">
+                        <div className="pt-name">{item.name}</div>
+                        <div className="pt-price">Rs. {Number(item.price).toLocaleString()}</div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          ))}
         </div>
       </div>
 
