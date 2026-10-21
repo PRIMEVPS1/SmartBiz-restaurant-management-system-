@@ -19,13 +19,13 @@ import ModifiersPage    from './pages/ModifiersPage'
 import RoomsPage        from './pages/RoomsPage'
 import ReservationsPage from './pages/ReservationsPage'
 import InventoryPage    from './pages/InventoryPage'
-import StaffPage        from './pages/StaffPage'
+import StaffHRPage      from './pages/StaffHRPage'
 import CustomersPage    from './pages/CustomersPage'
 import ReportsPage      from './pages/ReportsPage'
 import SettingsPage     from './pages/SettingsPage'
 import VoidsPage        from './pages/VoidsPage'
 import CashDrawerPage   from './pages/CashDrawerPage'
-import CustomerMenu     from './pages/CustomerMenu'
+import CustomerMenu     from './pages/GuestMenuPage'
 import RegisterPage     from './pages/RegisterPage'
 import AdminPage        from './pages/AdminPage'
 import InstallPrompt    from './components/InstallPrompt'
@@ -164,7 +164,7 @@ export default function App() {
           <Route path="rooms"            element={<RoleRoute path="/rooms"><RoomsPage /></RoleRoute>} />
           <Route path="reservations"     element={<RoleRoute path="/reservations"><ReservationsPage /></RoleRoute>} />
           <Route path="inventory"        element={<RoleRoute path="/inventory"><InventoryPage /></RoleRoute>} />
-          <Route path="staff"            element={<RoleRoute path="/staff"><StaffPage /></RoleRoute>} />
+          <Route path="staff"            element={<RoleRoute path="/staff"><StaffHRPage /></RoleRoute>} />
           <Route path="customers"        element={<RoleRoute path="/customers"><CustomersPage /></RoleRoute>} />
           <Route path="reports"          element={<RoleRoute path="/reports"><ReportsPage /></RoleRoute>} />
           <Route path="settings"         element={<RoleRoute path="/settings"><SettingsPage /></RoleRoute>} />
