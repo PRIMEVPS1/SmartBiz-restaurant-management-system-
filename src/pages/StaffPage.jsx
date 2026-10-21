@@ -1,348 +1,285 @@
-// src/pages/TablesPage.jsx
-import { useEffect, useState, useCallback } from 'react'
-import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+// src/pages/StaffPage.jsx
+import { useEffect, useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import { localGetAll, offlineWrite } from '../lib/offlineDB'
 import { useStore } from '../store/useStore'
-import { isOnline } from '../lib/supabase'
 import toast from 'react-hot-toast'
-import './TablesPage.css'
-import './QRSheet.css'
+import './StaffPage.css'
 
-const STATUS = ['all','available','occupied','reserved','cleaning']
-const STATUS_LABEL = { available:'Available', occupied:'Occupied', reserved:'Reserved', cleaning:'Cleaning' }
+const ROLES = ['owner','manager','cashier','waiter','kitchen','receptionist']
+const COLORS = ['#29b6f6','#10b981','#60a5fa','#a78bfa','#fb923c','#f43f5e','#14b8a6','#8b5cf6']
+const EMPTY = { name:'', email:'', phone:'', role:'waiter', pin:'', avatar_color:'#29b6f6', active:true, password:'' }
 
-export default function TablesPage() {
-  const navigate = useNavigate()
-  const { tenant, staff } = useStore()
-  const [tables,  setTables]  = useState([])
-  const [filter,  setFilter]  = useState('all')
+export default function StaffPage() {
+  const { tenant, staff: me } = useStore()
+  const sub = useStore(s => s.sub)
+  // the owner may create logins only when SmartBiz Super Admin allowed it for this restaurant
+  const canLogin = me?.role === 'owner' && !!sub?.allow_staff_logins
+  const [staff,   setStaff]   = useState([])
   const [loading, setLoading] = useState(true)
-  const [qrModal, setQrModal] = useState(null)
-  const [sheet,   setSheet]   = useState(null)    // tables to print as QR cards
-  const [addOpen, setAddOpen] = useState(false)
-  const [addForm, setAddForm] = useState({ number: '', capacity: 4, section: 'main', bulk: 0 })
-  const [adding,  setAdding]  = useState(false)
-  const [editT,   setEditT]   = useState(null)   // { id, number, capacity, section, status }
+  const [modal,   setModal]   = useState(null)   // null | 'add' | {staff}
+  const [form,    setForm]    = useState(EMPTY)
   const [saving,  setSaving]  = useState(false)
+  const [delConfirm, setDelConfirm] = useState(null)
+  const [search,  setSearch]  = useState('')
+  const [filterRole, setFilterRole] = useState('all')
 
-  useEffect(() => { loadTables() }, [tenant?.id])
+  useEffect(() => { if (tenant?.id) load() }, [tenant?.id])
 
-  // Realtime subscription
-  useEffect(() => {
-    if (!tenant) return
-    const sub = supabase.channel('tables-realtime')
-      .on('postgres_changes', { event:'*', schema:'public', table:'restaurant_tables', filter:`tenant_id=eq.${tenant.id}` },
-        () => loadTables())
-      .subscribe()
-    return () => supabase.removeChannel(sub)
-  }, [tenant?.id])
-
-  async function loadTables() {
+  async function load() {
     setLoading(true)
     try {
-      if (isOnline() && tenant) {
-        const { data, error } = await supabase.from('restaurant_tables').select('*').eq('tenant_id', tenant.id).order('number')
-        if (error) throw error
-        setTables(data || [])
-      } else {
-        const data = await localGetAll('restaurant_tables')
-        setTables(data.sort((a,b)=>a.number.localeCompare(b.number)))
-      }
-    } catch(e) {
-      const data = await localGetAll('restaurant_tables')
-      setTables(data)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function openTable(table) {
-    if (table.status === 'cleaning') { toast.error('Table is being cleaned'); return }
-    if (table.status === 'available') {
-      // Create new order
-      await createOrder(table)
-    } else {
-      // View existing order
-      navigate(`/orders?table=${table.id}`)
-    }
-  }
-
-  async function createOrder(table) {
-    if (!tenant || !staff) return
-    const order = {
-      id: crypto.randomUUID(),
-      tenant_id: tenant.id,
-      order_number: '',
-      type: 'dine_in',
-      table_id: table.id,
-      waiter_id: staff.id,
-      status: 'pending',
-      guest_count: 1,
-      subtotal: 0, service_charge: 0, tax: 0, discount: 0, total: 0,
-      synced: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-    try {
-      await offlineWrite('orders', 'INSERT', order, 'orders')
-      // Update table status
-      const updTable = { ...table, status: 'occupied', updated_at: new Date().toISOString() }
-      await offlineWrite('restaurant_tables', 'UPDATE', updTable, 'restaurant_tables')
-      toast.success(`Order created for ${table.number}`)
-      navigate(`/pos/${order.id}`)
-    } catch(e) {
-      toast.error('Failed to create order')
-    }
-  }
-
-  const tokenFor = t => t.qr_code || `${tenant.slug}-${t.id.slice(0, 8)}`
-  const urlFor   = tok => `${window.location.origin}/menu/${tok}`
-  const qrImg    = url => `https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=0&data=${encodeURIComponent(url)}`
-
-  // make sure the table's QR token is saved in the database (required for the public menu)
-  async function ensureToken(t) {
-    const token = tokenFor(t)
-    if (t.qr_code !== token) {
-      const { error } = await supabase.from('restaurant_tables').update({ qr_code: token }).eq('id', t.id)
+      const { data, error } = await supabase
+        .from('staff').select('*')
+        .eq('tenant_id', tenant.id)
+        .order('role').order('name')
       if (error) throw error
-      setTables(ts => ts.map(x => x.id === t.id ? { ...x, qr_code: token } : x))
-    }
-    return token
+      setStaff(data || [])
+    } catch(e) { toast.error(e.message) }
+    finally    { setLoading(false) }
   }
 
-  async function generateQR(table) {
-    try {
-      const token = await ensureToken(table)
-      setQrModal({ table, url: urlFor(token), token })
-    } catch (e) { toast.error('Could not save QR (check internet): ' + (e.message || '')) }
+  function openAdd() { setForm({ ...EMPTY }); setModal('add') }
+  function openEdit(s) {
+    setForm({ name:s.name, email:s.email||'', phone:s.phone||'',
+      role:s.role, pin:s.pin||'', avatar_color:s.avatar_color||'#29b6f6', active:s.active })
+    setModal(s)
   }
 
-  function printSheet(list) {
-    setSheet(list)
-    setTimeout(() => { window.print(); setSheet(null) }, 1200)   // wait for QR images to load
-  }
-
-  async function printOne(table) {
-    try { await ensureToken(table); printSheet([{ ...table, qr_code: tokenFor(table) }]) }
-    catch (e) { toast.error(e.message || 'Failed') }
-  }
-
-  async function printAll() {
-    if (!tables.length) return toast.error('Add tables first')
-    try {
-      const list = []
-      for (const t of tables) { await ensureToken(t); list.push({ ...t, qr_code: tokenFor(t) }) }
-      printSheet(list)
-    } catch (e) { toast.error(e.message || 'Failed') }
-  }
-
-  async function addTables(e) {
-    e.preventDefault()
-    const bulk = Number(addForm.bulk) || 0
-    let rows = []
-    if (bulk > 0) {
-      const start = tables.length
-      for (let i = 1; i <= Math.min(bulk, 100); i++) rows.push({ number: `T${start + i}` })
-    } else {
-      if (!addForm.number.trim()) return toast.error('Table name/number required')
-      rows.push({ number: addForm.number.trim() })
-    }
-    setAdding(true)
-    const payload = rows.map(r => ({
-      tenant_id: tenant.id, number: r.number, capacity: Number(addForm.capacity) || 4,
-      section: addForm.section, status: 'available',
-    }))
-    const { error } = await supabase.from('restaurant_tables').insert(payload)
-    setAdding(false)
-    if (error) return toast.error(error.message)
-    toast.success(`${payload.length} table(s) added`)
-    setAddOpen(false); setAddForm({ number: '', capacity: 4, section: 'main', bulk: 0 })
-    loadTables()
-  }
-
-  async function saveEdit(e) {
-    e.preventDefault()
-    const number = editT.number.trim()
-    if (!number) return toast.error('Table name/number required')
+  async function save() {
+    if (!form.name.trim())       { toast.error('Name required'); return }
+    if (!form.role)              { toast.error('Role required'); return }
+    if (form.pin && !/^\d{4}$/.test(form.pin)) { toast.error('PIN must be 4 digits'); return }
     setSaving(true)
-    const { error } = await supabase.from('restaurant_tables').update({
-      number, capacity: Number(editT.capacity) || 4, section: editT.section, status: editT.status,
-    }).eq('id', editT.id)
-    setSaving(false)
-    if (error) return toast.error(/duplicate|unique/i.test(error.message) ? `Table "${number}" already exists` : error.message)
-    toast.success('Table updated')
-    setEditT(null); setQrModal(null); loadTables()
+    try {
+      const isEdit  = modal && modal !== 'add'
+      const { password, ...rest } = form
+      const payload = { ...rest, name: form.name.trim(), tenant_id: tenant.id }
+      if (!isEdit && canLogin && password) {
+        // create a real login: temp client signUp (owner session stays) + link it to this restaurant
+        if (!form.email.trim()) throw new Error('Email is required for a login')
+        if (password.length < 6) throw new Error('Password must be 6+ characters')
+        if (form.role === 'owner') throw new Error('Owner logins are created by SmartBiz')
+        const tmp = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, {
+          auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'sb-tmp-staff' },
+        })
+        const { data: u, error: ue } = await tmp.auth.signUp({ email: form.email.trim(), password })
+        if (ue) throw ue
+        if (!u.user?.id) throw new Error('Could not create login')
+        const { data: newId, error: re } = await supabase.rpc('create_staff_login', {
+          p_tenant_id: tenant.id, p_user_id: u.user.id, p_name: form.name.trim(),
+          p_email: form.email.trim(), p_role: form.role, p_phone: form.phone || null,
+        })
+        if (re) throw re
+        const { error: xe } = await supabase.from('staff').update({
+          pin: form.pin || null, avatar_color: form.avatar_color, active: form.active,
+        }).eq('id', newId)
+        if (xe) throw xe
+        toast.success(`Login created: ${form.email.trim()}`)
+        setModal(null); await load(); setSaving(false); return
+      }
+      const { error } = isEdit
+        ? await supabase.from('staff').update(payload).eq('id', modal.id)
+        : await supabase.from('staff').insert(payload)
+      if (error) throw error
+      toast.success(isEdit ? 'Staff updated!' : 'Staff added!')
+      setModal(null); await load()
+    } catch(e) { toast.error(e.message) }
+    finally    { setSaving(false) }
   }
 
-  async function deleteTable(table) {
-    if (table.status !== 'available') return toast.error('Only an available table can be deleted')
-    if (!window.confirm(`Delete table ${table.number}?`)) return
-    const { error } = await supabase.from('restaurant_tables').delete().eq('id', table.id)
-    if (error) return toast.error(error.message)
-    toast.success('Table deleted'); setQrModal(null); loadTables()
+  async function toggleActive(s) {
+    try {
+      await supabase.from('staff').update({ active: !s.active }).eq('id', s.id)
+      setStaff(prev => prev.map(x => x.id === s.id ? { ...x, active: !s.active } : x))
+      toast.success(s.active ? 'Staff deactivated' : 'Staff activated')
+    } catch(e) { toast.error(e.message) }
   }
 
-  const filtered = filter === 'all' ? tables : tables.filter(t => t.status === filter)
-  const counts   = STATUS.slice(1).reduce((acc,s)=>({...acc,[s]:tables.filter(t=>t.status===s).length}),{})
+  async function del(s) {
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('staff').delete().eq('id', s.id)
+      if (error) throw error
+      toast.success('Staff removed'); setDelConfirm(null); await load()
+    } catch(e) { toast.error(e.message) }
+    finally    { setSaving(false) }
+  }
+
+  const ROLE_COLOR = {
+    owner:'#29b6f6', manager:'#60a5fa', cashier:'#10b981',
+    waiter:'#a78bfa', kitchen:'#fb923c', receptionist:'#14b8a6'
+  }
+
+  const filtered = staff.filter(s => {
+    const m = !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.email||'').toLowerCase().includes(search.toLowerCase())
+    const r = filterRole === 'all' || s.role === filterRole
+    return m && r
+  })
+
+  const initials = s => s.name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()
 
   return (
     <div className="page-wrap">
       <div className="topbar">
-        <div className="topbar-title">Tables & QR <small>Floor Plan</small></div>
-        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-          <button className="btn" onClick={()=>setAddOpen(true)}>➕ Add table</button>
-          <button className="btn" onClick={printAll}>🖨️ Print all QR</button>
-          <button className="btn btn-primary" onClick={()=>navigate('/reservations')}>📅 Reserve</button>
+        <div className="topbar-title">Staff & HR <small>{staff.length} members</small></div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn" onClick={load} disabled={loading}>🔄</button>
+          <button className="btn btn-primary" onClick={openAdd}>＋ Add Staff</button>
         </div>
       </div>
 
-      <div className="tables-body">
-        {/* Status summary */}
-        <div className="status-row">
-          {STATUS.map(s => (
-            <button key={s} className={`status-filter ${filter===s?'active':''} sf-${s}`} onClick={()=>setFilter(s)}>
-              {s === 'all' ? `All (${tables.length})` : `${STATUS_LABEL[s]} (${counts[s]||0})`}
+      {/* Stats */}
+      <div className="sf-stats">
+        {ROLES.map(r => {
+          const cnt = staff.filter(s => s.role === r).length
+          return (
+            <div key={r} className="sf-stat" style={{ borderColor: ROLE_COLOR[r]+'33', cursor:'pointer' }} onClick={() => setFilterRole(r === filterRole ? 'all' : r)}>
+              <span className="sf-stat-val" style={{ color: ROLE_COLOR[r] }}>{cnt}</span>
+              <span className="sf-stat-lbl">{r}</span>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Filters */}
+      <div className="sf-filters">
+        <div className="mn-search-wrap" style={{flex:1,minWidth:180}}>
+          <span className="mn-search-icon">🔍</span>
+          <input className="mn-search" placeholder="Search staff..." value={search} onChange={e=>setSearch(e.target.value)} />
+          {search && <button className="mn-search-clear" onClick={()=>setSearch('')}>✕</button>}
+        </div>
+        <div className="mn-filter-pills">
+          <button className={`pill ${filterRole==='all'?'active':''}`} onClick={()=>setFilterRole('all')}>All</button>
+          {ROLES.map(r => (
+            <button key={r} className={`pill ${filterRole===r?'active':''}`} onClick={()=>setFilterRole(r)}
+              style={filterRole===r?{background:ROLE_COLOR[r]+'22',borderColor:ROLE_COLOR[r]+'55',color:ROLE_COLOR[r]}:{}}>
+              {r}
             </button>
           ))}
         </div>
-
-        {/* Legend */}
-        <div className="legend">
-          <span className="legend-item li-available">● Available</span>
-          <span className="legend-item li-occupied">● Occupied</span>
-          <span className="legend-item li-reserved">● Reserved</span>
-          <span className="legend-item li-cleaning">● Cleaning</span>
-        </div>
-
-        {loading
-          ? <div className="empty-state" style={{padding:'80px'}}>Loading tables...</div>
-          : filtered.length === 0
-            ? <div className="empty-state" style={{padding:'80px'}}>No tables yet. Tap “➕ Add table” above.</div>
-            : <div className="table-grid">
-                {filtered.map(t => (
-                  <TableCard key={t.id} table={t} onOpen={openTable} onQR={generateQR} onEdit={tb => setEditT({ id: tb.id, number: tb.number, capacity: tb.capacity || 4, section: tb.section || 'main', status: tb.status })} />
-                ))}
-              </div>
-        }
       </div>
 
-      {/* QR Modal */}
-      {qrModal && (
-        <div className="modal-overlay" onClick={()=>setQrModal(null)}>
-          <div className="modal" onClick={e=>e.stopPropagation()}>
-            <div className="modal-head">
-              <div className="modal-title">📲 QR Code — {qrModal.table.number}</div>
-              <button className="modal-close" onClick={()=>setQrModal(null)}>✕</button>
-            </div>
-            <div className="modal-body" style={{textAlign:'center'}}>
-              <div className="qr-display">
-                <img className="qr-img" src={qrImg(qrModal.url)} alt="QR" />
-              </div>
-              <div style={{marginTop:'16px',padding:'12px',background:'var(--s2)',borderRadius:'var(--rs)',fontSize:'12px',color:'var(--t2)',wordBreak:'break-all'}}>
-                {qrModal.url}
-              </div>
-              <div style={{display:'flex',gap:'8px',marginTop:'14px'}}>
-                <button className="btn" style={{flex:1}} onClick={()=>{navigator.clipboard.writeText(qrModal.url);toast.success('URL Copied!')}}>📋 Copy URL</button>
-                <button className="btn btn-primary" style={{flex:1}} onClick={()=>printOne(qrModal.table)}>🖨️ Print QR</button>
-              </div>
-              <div style={{display:'flex',gap:'8px',marginTop:10}}>
-                <button className="btn" style={{flex:1}} onClick={()=>{ const tb=qrModal.table; setQrModal(null); setEditT({ id: tb.id, number: tb.number, capacity: tb.capacity || 4, section: tb.section || 'main', status: tb.status }) }}>✏️ Edit table</button>
-                <button className="btn" style={{flex:1}} onClick={()=>deleteTable(qrModal.table)}>🗑️ Delete</button>
-              </div>
-              <div style={{marginTop:'12px',fontSize:'12px',color:'var(--t2)'}}>
-                Customer scans → opens menu → orders directly → Kitchen & Cashier notified automatically
-              </div>
-            </div>
-          </div>
+      {/* Grid */}
+      {loading ? (
+        <div className="mn-loading">Loading staff...</div>
+      ) : filtered.length === 0 ? (
+        <div className="mn-empty">
+          <div style={{fontSize:48,marginBottom:12}}>👥</div>
+          <div className="mn-empty-title">{search ? 'No staff found' : 'No staff members yet'}</div>
+          <div className="mn-empty-sub">Add your first staff member</div>
+          {!search && <button className="btn btn-primary" style={{marginTop:16}} onClick={openAdd}>＋ Add Staff</button>}
         </div>
-      )}
-      {addOpen && (
-        <div className="modal-overlay" onClick={()=>setAddOpen(false)}>
-          <div className="modal" onClick={e=>e.stopPropagation()}>
-            <div className="modal-head">
-              <div className="modal-title">➕ Add table</div>
-              <button className="modal-close" onClick={()=>setAddOpen(false)}>✕</button>
-            </div>
-            <form className="modal-body" onSubmit={addTables}>
-              <div className="fg"><label className="label">Table name / number</label>
-                <input className="input" placeholder="T5" value={addForm.number} onChange={e=>setAddForm(f=>({...f,number:e.target.value}))} /></div>
-              <div className="fg"><label className="label">…or add many at once (how many?)</label>
-                <input className="input" type="number" min="0" max="100" value={addForm.bulk} onChange={e=>setAddForm(f=>({...f,bulk:e.target.value}))} /></div>
-              <div className="fg"><label className="label">Seats</label>
-                <input className="input" type="number" min="1" value={addForm.capacity} onChange={e=>setAddForm(f=>({...f,capacity:e.target.value}))} /></div>
-              <div className="fg"><label className="label">Section</label>
-                <select className="input" value={addForm.section} onChange={e=>setAddForm(f=>({...f,section:e.target.value}))}>
-                  <option value="main">Main</option><option value="outdoor">Outdoor</option>
-                  <option value="vip">VIP</option><option value="bar">Bar</option>
-                </select></div>
-              <button className="btn btn-primary" style={{width:'100%',marginTop:8}} disabled={adding}>{adding ? 'Adding...' : 'Add'}</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {editT && (
-        <div className="modal-overlay" onClick={()=>setEditT(null)}>
-          <div className="modal" onClick={e=>e.stopPropagation()}>
-            <div className="modal-head">
-              <div className="modal-title">✏️ Edit table</div>
-              <button className="modal-close" onClick={()=>setEditT(null)}>✕</button>
-            </div>
-            <form className="modal-body" onSubmit={saveEdit}>
-              <div className="fg"><label className="label">Table name / number</label>
-                <input className="input" value={editT.number} onChange={e=>setEditT(f=>({...f,number:e.target.value}))} autoFocus /></div>
-              <div className="fg"><label className="label">Seats</label>
-                <input className="input" type="number" min="1" value={editT.capacity} onChange={e=>setEditT(f=>({...f,capacity:e.target.value}))} /></div>
-              <div className="fg"><label className="label">Section</label>
-                <select className="input" value={editT.section} onChange={e=>setEditT(f=>({...f,section:e.target.value}))}>
-                  <option value="main">Main</option><option value="outdoor">Outdoor</option>
-                  <option value="vip">VIP</option><option value="bar">Bar</option>
-                </select></div>
-              <div className="fg"><label className="label">Status</label>
-                <select className="input" value={editT.status} onChange={e=>setEditT(f=>({...f,status:e.target.value}))}>
-                  {STATUS.slice(1).map(st => <option key={st} value={st}>{STATUS_LABEL[st]}</option>)}
-                </select></div>
-              <div style={{display:'flex',gap:8,marginTop:8}}>
-                <button type="button" className="btn" style={{flex:1}} onClick={()=>{ const tb = tables.find(x=>x.id===editT.id); if (tb) { setEditT(null); deleteTable(tb) } }}>🗑️ Delete</button>
-                <button className="btn btn-primary" style={{flex:2}} disabled={saving}>{saving ? 'Saving...' : '💾 Save'}</button>
+      ) : (
+        <div className="sf-grid">
+          {filtered.map(s => (
+            <div key={s.id} className={`sf-card ${!s.active?'inactive':''}`}>
+              <div className="sf-card-head">
+                <div className="sf-avatar" style={{background:s.avatar_color||'#29b6f6'}}>{initials(s)}</div>
+                <div className="sf-info">
+                  <div className="sf-name">{s.name}</div>
+                  <div className="sf-role-badge" style={{background:ROLE_COLOR[s.role]+'22',color:ROLE_COLOR[s.role]}}>{s.role}</div>
+                </div>
+                <button className={`mn-toggle ${s.active?'on':'off'}`} onClick={()=>toggleActive(s)}><span className="mn-toggle-knob"/></button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {sheet && createPortal(
-        <div className="qr-sheet">
-          {sheet.map(t => (
-            <div className="qr-card" key={t.id}>
-              {tenant?.logo_url && <img className="logo" src={tenant.logo_url} alt="" />}
-              <div className="qr-biz">{tenant?.name}</div>
-              <div className="qr-table">Table {t.number}</div>
-              <img className="qr" src={qrImg(urlFor(t.qr_code))} alt="QR" />
-              <div className="qr-hint">Scan to view menu &amp; order</div>
+              <div className="sf-card-body">
+                {s.email && <div className="sf-detail">📧 {s.email}</div>}
+                {s.phone && <div className="sf-detail">📱 {s.phone}</div>}
+                {s.pin   && <div className="sf-detail">🔑 PIN: ••••</div>}
+                {!s.active && <div className="sf-inactive-badge">Inactive</div>}
+              </div>
+              <div className="sf-card-foot">
+                <button className="mn-act-btn edit" onClick={()=>openEdit(s)}>✏️ Edit</button>
+                <button className="mn-act-btn del"  onClick={()=>setDelConfirm(s)}>🗑</button>
+              </div>
             </div>
           ))}
-        </div>, document.body)}
-    </div>
-  )
-}
-
-function TableCard({ table, onOpen, onQR, onEdit }) {
-  return (
-    <div className={`table-card tc-${table.status}`} onClick={() => onOpen(table)}>
-      <div className="tc-qr" onClick={e=>{e.stopPropagation(); onQR(table)}} title="Generate QR">⬛</div>
-      <div className="tc-edit" onClick={e=>{e.stopPropagation(); onEdit(table)}} title="Edit table">✏️</div>
-      <div className="tc-num">{table.number}</div>
-      <div className={`tc-status ts-${table.status}`}>{STATUS_LABEL[table.status]}</div>
-      <div className="tc-cap">👥 {table.capacity} seats</div>
-      {table.section && <div className="tc-section">{table.section}</div>}
-      {table.status === 'occupied' && (
-        <div className="tc-action">Tap to view order</div>
+        </div>
       )}
-      {table.status === 'available' && (
-        <div className="tc-action" style={{color:'var(--green)'}}>Tap to start order</div>
+
+      {/* Modal */}
+      {modal && (
+        <div className="mn-overlay" onClick={()=>setModal(null)}>
+          <div className="mn-modal" onClick={e=>e.stopPropagation()}>
+            <div className="mn-modal-head">
+              <div className="mn-modal-title">{modal==='add'?'＋ Add Staff':'✏️ Edit Staff'}</div>
+              <button className="mn-modal-close" onClick={()=>setModal(null)}>✕</button>
+            </div>
+            <div className="mn-modal-body">
+              <div className="mn-field">
+                <label>Full Name *</label>
+                <input className="mn-input" placeholder="e.g. Kasun Perera" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} autoFocus />
+              </div>
+              <div className="mn-field-row">
+                <div className="mn-field">
+                  <label>Role *</label>
+                  <select className="mn-input" value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>
+                    {ROLES.filter(r => !(canLogin && modal==='add' && r==='owner')).map(r=><option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+                <div className="mn-field">
+                  <label>PIN (4 digits)</label>
+                  <input className="mn-input" placeholder="1234" maxLength={4} value={form.pin} onChange={e=>setForm(f=>({...f,pin:e.target.value.replace(/\D/g,'')}))} />
+                </div>
+              </div>
+              <div className="mn-field">
+                <label>Email</label>
+                <input className="mn-input" type="email" placeholder="staff@example.com" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} />
+              </div>
+              <div className="mn-field">
+                <label>Phone</label>
+                <input className="mn-input" placeholder="+94 77 123 4567" value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} />
+              </div>
+              {modal==='add' && (canLogin ? (
+                <div className="mn-field">
+                  <label>Login password (optional — creates a login for this staff member)</label>
+                  <input className="mn-input" type="text" placeholder="min 6 characters" value={form.password} onChange={e=>setForm(f=>({...f,password:e.target.value}))} />
+                  <div style={{fontSize:11.5,color:'var(--t2,#9aa7bd)',marginTop:4}}>Email above is the login. Leave empty to add a record without login.</div>
+                </div>
+              ) : (
+                <div style={{fontSize:12,color:'var(--t2,#9aa7bd)',margin:'2px 0 10px'}}>ℹ️ This adds a staff record only. Staff logins are created by SmartBiz — contact support.</div>
+              ))}
+              <div className="mn-field">
+                <label>Avatar Color</label>
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:4}}>
+                  {COLORS.map(c=>(
+                    <button key={c} onClick={()=>setForm(f=>({...f,avatar_color:c}))}
+                      style={{width:28,height:28,borderRadius:'50%',background:c,border:form.avatar_color===c?'3px solid #fff':'2px solid transparent',cursor:'pointer'}}/>
+                  ))}
+                </div>
+              </div>
+              <div className="mn-field mn-inline">
+                <label>Active</label>
+                <button className={`mn-toggle ${form.active?'on':'off'}`} onClick={()=>setForm(f=>({...f,active:!f.active}))}><span className="mn-toggle-knob"/></button>
+              </div>
+            </div>
+            <div className="mn-modal-foot">
+              <button className="btn" onClick={()=>setModal(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'Saving...':modal==='add'?'Add Staff':'Save Changes'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm */}
+      {delConfirm && (
+        <div className="mn-overlay" onClick={()=>setDelConfirm(null)}>
+          <div className="mn-modal mn-modal-sm" onClick={e=>e.stopPropagation()}>
+            <div className="mn-modal-head">
+              <div className="mn-modal-title">🗑️ Remove Staff</div>
+              <button className="mn-modal-close" onClick={()=>setDelConfirm(null)}>✕</button>
+            </div>
+            <div className="mn-modal-body">
+              <p style={{color:'var(--t2)',fontSize:14,lineHeight:1.6}}>
+                Remove <strong style={{color:'var(--text)'}}>{delConfirm.name}</strong> from the system? This cannot be undone.
+              </p>
+            </div>
+            <div className="mn-modal-foot">
+              <button className="btn" onClick={()=>setDelConfirm(null)}>Cancel</button>
+              <button className="btn btn-danger" disabled={saving} onClick={()=>del(delConfirm)}>{saving?'Removing...':'Yes, Remove'}</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
