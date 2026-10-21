@@ -1,6 +1,6 @@
 // src/pages/LoginPage.jsx
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import LogoMark from '../components/Logo'
@@ -86,7 +86,7 @@ export default function LoginPage() {
         </form>
 
         <div className="login-footer" style={{ marginBottom: 8 }}>
-          New restaurant? <Link to="/register"><span>Create an account</span></Link>
+          Need an account? Contact <span>SmartBiz</span> · info.smartbizsoftwares@gmail.com
         </div>
         <div className="login-footer">
           Powered by <span>SmartBiz</span> · Multi-tenant Cloud Platform
