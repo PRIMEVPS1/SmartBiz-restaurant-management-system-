@@ -94,6 +94,10 @@ export default function App() {
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'TOKEN_REFRESHED') return
+      // hold the router on "Loading..." until staff + tenant + admin flag are loaded
+      // (otherwise right after login the app sees "no tenant" and jumps to /register)
+      setReady(false)
       // defer to avoid deadlock inside the auth callback
       setTimeout(async () => { await loadStaff(session); setReady(true) }, 0)
     })
