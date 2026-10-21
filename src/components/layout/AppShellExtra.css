@@ -1,0 +1,18 @@
+/* src/components/layout/AppShellExtra.css — mobile fixes */
+.sidebar { min-height: 0 !important; height: 100vh; height: 100dvh; }
+.sb-foot { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+.sb-logout { font-size: 13px; padding: 6px 10px; border: 1px solid var(--border2); color: var(--t2); white-space: nowrap; }
+.sb-edge { display: none; }
+@media (max-width: 768px) {
+  .sb-edge {
+    display: flex; align-items: center; justify-content: center;
+    position: fixed; left: 0; top: 45%; z-index: 250;
+    width: 26px; height: 60px; border: 0; border-radius: 0 14px 14px 0;
+    background: #29b6f6; color: #04131c; font-size: 16px; font-weight: 800;
+    box-shadow: 2px 0 12px rgba(0,0,0,.4); opacity: .85; cursor: pointer;
+  }
+  .shell:not(.sidebar-collapsed) .sb-edge { display: none; }
+}
+.locked-box { margin: 60px 20px; padding: 28px; text-align: center; background: var(--s1); border: 1px solid var(--border); border-radius: 16px; }
+.locked-box h3 { margin: 8px 0; }
+.locked-box p { color: var(--t2); font-size: 13.5px; }
