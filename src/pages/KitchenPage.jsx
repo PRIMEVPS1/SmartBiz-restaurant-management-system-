@@ -24,12 +24,21 @@ export default function KitchenPage() {
 
   useEffect(() => { loadTickets() }, [tenant?.id])
 
-  // Realtime
+    // Realtime (all handlers must be added BEFORE subscribe())
   useEffect(() => {
     if (!tenant) return
     const sub = supabase.channel('kds-realtime')
-      .on('postgres_changes', { event:'*', schema:'public', table:'orders', filter:`tenant_id=eq.${tenant.id}` }, () => loadTickets())
+      .on('postgres_changes', { event:'*', schema:'public', table:'orders', filter:`tenant_id=eq.${tenant.id}` }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          playBeep()
+          toast('🔔 New order received!', { icon:'🍽️' })
+        }
+        loadTickets()
+      })
       .on('postgres_changes', { event:'*', schema:'public', table:'order_items', filter:`tenant_id=eq.${tenant.id}` }, () => loadTickets())
+      .subscribe()
+    return () => supabase.removeChannel(sub)
+  }, [tenant?.id]) => loadTickets())
       .subscribe()
 
     // Play sound on new order
