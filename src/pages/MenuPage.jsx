@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../store/useStore'
 import toast from 'react-hot-toast'
+import ImageUploadField from '../components/ImageUploadField'
 import './MenuPage.css'
 
 const CATEGORY_ICONS = ['🍽️','🍛','🍜','🍕','🍔','🥗','🍱','🍣','🍤','🥩','🍗','🥘','🍲','🥪','🌮','🍝','🥟','🍦','🍰','☕','🧃','🍺','🥤','🍹']
@@ -331,13 +332,7 @@ export default function MenuPage() {
                   </div>
                 </div>
                 <div>
-                  <div className="mn-field">
-                    <label>Category</label>
-                    <select className="mn-input" value={itemForm.category_id} onChange={e => setItemForm(f => ({ ...f, category_id: e.target.value }))}>
-                      <option value="">No Category</option>
-                      {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-                    </select>
-                  </div>
+                  <ImageUploadField value={itemForm.image_url} onChange={v => setItemForm(f => ({ ...f, image_url: v }))} tenantId={tenant.id} />
                   <div className="mn-field">
                     <label>Image URL</label>
                     <input className="mn-input" placeholder="https://..." value={itemForm.image_url} onChange={e => setItemForm(f => ({ ...f, image_url: e.target.value }))} />
