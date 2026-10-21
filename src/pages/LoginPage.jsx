@@ -29,7 +29,7 @@ export default function LoginPage() {
         navigate(isAdmin ? '/admin' : '/register')
         return
       }
-      navigate('/')
+      navigate('/dashboard')
     } catch (err) {
       toast.error(err.message || 'Login failed')
     } finally {
