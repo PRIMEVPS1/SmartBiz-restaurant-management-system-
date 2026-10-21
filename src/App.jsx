@@ -29,13 +29,16 @@ import CustomerMenu     from './pages/CustomerMenu'
 import RegisterPage     from './pages/RegisterPage'
 import AdminPage        from './pages/AdminPage'
 import InstallPrompt    from './components/InstallPrompt'
+import LockedScreen     from './components/LockedScreen'
 import { canAccess, homeFor } from './lib/permissions'
 
 function ProtectedRoute({ children, ready, isAdmin = false, requireTenant = true }) {
   const user   = useStore(s => s.user)
   const tenant = useStore(s => s.tenant)
+  const sub    = useStore(s => s.sub)
   if (!ready) return <div style={{ padding: 40, textAlign: 'center', color: '#9aa7bd' }}>Loading...</div>
   if (!user) return <Navigate to="/login" replace />
+  if (!isAdmin && sub?.locked) return <LockedScreen sub={sub} />
   // Super Admin without a (usable) restaurant → straight to the admin panel
   if (requireTenant && !tenant) return <Navigate to={isAdmin ? '/admin' : '/register'} replace />
   return children
@@ -64,11 +67,20 @@ export default function App() {
     async function loadStaff(session) {
       const st = useStore.getState()
       st.setUser(session?.user ?? null)
-      if (!session?.user) { st.setStaff(null); st.setTenant(null); setIsAdmin(false); return }
+      if (!session?.user) { st.setStaff(null); st.setTenant(null); st.setSub(null); setIsAdmin(false); return }
       // is this a SmartBiz platform (Super) admin?
       let admin = false
       try { const { data: a } = await supabase.rpc('is_platform_admin'); admin = !!a } catch { admin = false }
       setIsAdmin(admin)
+      // subscription / disabled-account check (works only after SQL patch 09)
+      let sub = null
+      try { const { data: sb } = await supabase.rpc('my_subscription'); sub = sb || null } catch { sub = null }
+      st.setSub(sub)
+      if (!admin && sub?.has_restaurant && sub.staff_active === false) {
+        toast.error('Your account is disabled. Contact your manager.')
+        await supabase.auth.signOut(); st.logout(); return
+      }
+      if (!admin && sub?.locked) { st.setStaff(null); st.setTenant(null); return }   // LockedScreen is shown
       const { data, error } = await supabase
         .from('staff').select('*, tenants(*)')
         .eq('auth_id', session.user.id).maybeSingle()
