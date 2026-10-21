@@ -6,6 +6,7 @@ import { useStore } from '../../store/useStore'
 import { supabase } from '../../lib/supabase'
 import toast from 'react-hot-toast'
 import { enabledModules, moduleForPath } from '../../lib/features'
+import { canAccess } from '../../lib/permissions'
 import './AppShell.css'
 import './AppShellExtra.css'
 
@@ -37,6 +38,7 @@ export default function AppShell() {
   const navigate  = useNavigate()
   const location  = useLocation()
   const { staff, tenant, isOnline, pendingSyncCount, sidebarOpen, setSidebarOpen } = useStore()
+  const sub = useStore(s => s.sub)
 
   const [isAdmin, setIsAdmin] = useState(false)
   const enabled = enabledModules(tenant)
@@ -61,15 +63,23 @@ export default function AppShell() {
   }
 
   // hide disabled modules and empty sections
+  // module enabled for the restaurant AND allowed for this staff role
+  const show = path => enabled.has(path.slice(1)) && (!staff?.role || canAccess(staff.role, path))
   const visibleNav = NAV.filter((item, i) => {
     if (item.section) {
       for (let j = i + 1; j < NAV.length && !NAV[j].section; j++) {
-        if (enabled.has(NAV[j].path.slice(1))) return true
+        if (show(NAV[j].path)) return true
       }
       return false
     }
-    return enabled.has(item.path.slice(1))
+    return show(item.path)
   })
+
+  // payment reminder (owner / manager only)
+  const dl = sub?.days_left
+  const showBill = ['owner', 'manager'].includes(staff?.role) && dl != null && dl <= 7
+  const overdue = dl != null && dl < 0
+  const lockIn  = overdue ? Math.max((sub?.grace_days ?? 3) + dl, 0) : null
 
   const initials = staff?.name
     ? staff.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
@@ -138,6 +148,17 @@ export default function AppShell() {
       </aside>
 
       <main className="main-content">
+        {showBill && (
+          <div style={{ background: overdue ? '#5c1a1a' : '#4a3512', color: '#fff', padding: '10px 16px', fontSize: 13, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span>{overdue ? '⛔' : '⚠️'}</span>
+            <span style={{ flex: 1 }}>
+              {overdue
+                ? `Payment overdue by ${-dl} day(s). The system will lock ${lockIn > 0 ? `in ${lockIn} day(s)` : 'today'} if not paid.`
+                : dl === 0 ? 'Subscription payment is due today.' : `Subscription payment is due in ${dl} day(s).`}
+              {Number(sub?.monthly_fee) > 0 ? ` Amount: Rs. ${Number(sub.monthly_fee).toLocaleString()}.` : ''}
+            </span>
+          </div>
+        )}
         {allowed ? <Outlet /> : (
           <div className="locked-box">
             <div style={{ fontSize: 40 }}>🔒</div>
