@@ -38,15 +38,6 @@ export default function KitchenPage() {
       .on('postgres_changes', { event:'*', schema:'public', table:'order_items', filter:`tenant_id=eq.${tenant.id}` }, () => loadTickets())
       .subscribe()
     return () => supabase.removeChannel(sub)
-  }, [tenant?.id]) => loadTickets())
-      .subscribe()
-
-    // Play sound on new order
-    sub.on('postgres_changes', { event:'INSERT', schema:'public', table:'orders' }, () => {
-      playBeep()
-      toast('🔔 New order received!', { icon:'🍽️' })
-    })
-    return () => supabase.removeChannel(sub)
   }, [tenant?.id])
 
   async function loadTickets() {
