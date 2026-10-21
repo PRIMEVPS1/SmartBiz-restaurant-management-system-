@@ -8,7 +8,7 @@ import './MenuPage.css'
 
 const CATEGORY_ICONS = ['🍽️','🍛','🍜','🍕','🍔','🥗','🍱','🍣','🍤','🥩','🍗','🥘','🍲','🥪','🌮','🍝','🥟','🍦','🍰','☕','🧃','🍺','🥤','🍹']
 const EMPTY_CAT  = { name: '', icon: '🍽️', sort_order: 0, active: true }
-const EMPTY_ITEM = { name: '', description: '', price: '', category_id: '', is_available: true, is_veg: false, preparation_time: 15, image_url: '', sort_order: 0 }
+const EMPTY_ITEM = { name: '', description: '', price: '', category_id: '', is_available: true, is_veg: false, preparation_time: 15, image_url: '', sort_order: 0, badge: '', calories: '', name_si: '', description_si: '' }
 
 export default function MenuPage() {
   const { tenant } = useStore()
@@ -88,6 +88,8 @@ export default function MenuPage() {
       is_available: item.is_available, is_veg: item.is_veg,
       preparation_time: item.preparation_time, image_url: item.image_url || '',
       sort_order: item.sort_order,
+      badge: item.badge || '', calories: item.calories ?? '',
+      name_si: item.name_si || '', description_si: item.description_si || '',
     })
     setItemModal(item)
   }
@@ -97,16 +99,29 @@ export default function MenuPage() {
     if (!itemForm.price || isNaN(Number(itemForm.price))) { toast.error('Valid price required'); return }
     setSaving(true)
     try {
-      const payload = {
+      const base = {
         ...itemForm, name: itemForm.name.trim(), price: Number(itemForm.price),
         preparation_time: Number(itemForm.preparation_time) || 15,
         tenant_id: tenant.id, category_id: itemForm.category_id || null,
       }
+      ;['badge','calories','name_si','description_si'].forEach(k => delete base[k])
+      const extras = {
+        badge: itemForm.badge || null,
+        calories: itemForm.calories === '' || itemForm.calories == null ? null : Number(itemForm.calories),
+        name_si: (itemForm.name_si || '').trim() || null,
+        description_si: (itemForm.description_si || '').trim() || null,
+      }
       const isEdit = itemModal && itemModal !== 'add'
-      const { error } = isEdit
-        ? await supabase.from('menu_items').update(payload).eq('id', itemModal.id)
-        : await supabase.from('menu_items').insert(payload)
-      if (error) throw error
+      const run = payload => isEdit
+        ? supabase.from('menu_items').update(payload).eq('id', itemModal.id)
+        : supabase.from('menu_items').insert(payload)
+      let res = await run({ ...base, ...extras })
+      if (res.error && /badge|calories|name_si|description_si/.test(res.error.message || '')) {
+        // patch 07 SQL not run yet → save without the extra fields
+        res = await run(base)
+        if (!res.error) toast('Saved (run supabase/07_menu_extras.sql to enable badge / calories / Sinhala)', { icon: 'ℹ️', duration: 5000 })
+      }
+      if (res.error) throw res.error
       toast.success(isEdit ? 'Item updated!' : 'Item added!')
       setItemModal(null); await loadAll()
     } catch(e) { toast.error(e.message) } finally { setSaving(false) }
@@ -329,6 +344,31 @@ export default function MenuPage() {
                       <label>Prep Time (min)</label>
                       <input className="mn-input" type="number" min="1" value={itemForm.preparation_time} onChange={e => setItemForm(f => ({ ...f, preparation_time: e.target.value }))} />
                     </div>
+                  </div>
+                  <div className="mn-field-row">
+                    <div className="mn-field">
+                      <label>Badge</label>
+                      <select className="mn-input" value={itemForm.badge} onChange={e => setItemForm(f => ({ ...f, badge: e.target.value }))}>
+                        <option value="">— none —</option>
+                        <option value="Best Seller">Best Seller</option>
+                        <option value="Signature">Signature</option>
+                        <option value="New">New</option>
+                        <option value="Chef's Special">Chef's Special</option>
+                        <option value="Spicy">Spicy 🌶️</option>
+                      </select>
+                    </div>
+                    <div className="mn-field">
+                      <label>Calories (kcal)</label>
+                      <input className="mn-input" type="number" min="0" placeholder="optional" value={itemForm.calories} onChange={e => setItemForm(f => ({ ...f, calories: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="mn-field">
+                    <label>සිංහල නම (Sinhala name)</label>
+                    <input className="mn-input" placeholder="optional" value={itemForm.name_si} onChange={e => setItemForm(f => ({ ...f, name_si: e.target.value }))} />
+                  </div>
+                  <div className="mn-field">
+                    <label>සිංහල විස්තරය (Sinhala description)</label>
+                    <textarea className="mn-input mn-textarea" rows={2} placeholder="optional" value={itemForm.description_si} onChange={e => setItemForm(f => ({ ...f, description_si: e.target.value }))} />
                   </div>
                 </div>
                 <div>
