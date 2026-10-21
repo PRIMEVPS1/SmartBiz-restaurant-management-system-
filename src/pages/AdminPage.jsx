@@ -12,6 +12,9 @@ import './AdminPage.css'
 const PLANS = ['free', 'pro', 'enterprise']
 const EMPTY = { owner: '', email: '', password: '', name: '', slug: '', phone: '', address: '', plan: 'free' }
 
+const OVERLAY = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }
+const MODAL   = { width: '100%', maxWidth: 480, maxHeight: '90dvh', overflowY: 'auto', margin: 0 }
+
 const toRow = t => ({ ...t, draft: { plan: t.plan, active: t.active, features: featuresMap(enabledModules(t)) } })
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 
@@ -27,6 +30,9 @@ export default function AdminPage() {
   const [form, setForm]       = useState(EMPTY)
   const [creating, setCreating] = useState(false)
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+  const [edit, setEdit]       = useState(null)   // { id, name, slug, email, phone, address }
+  const [del, setDel]         = useState(null)   // { row, slug, password }
+  const [working, setWorking] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -53,6 +59,42 @@ export default function AdminPage() {
     if (error) return toast.error(error.message)
     setRows(rs => rs.map(x => x.id === r.id ? toRow({ ...x, plan: r.draft.plan, active: r.draft.active, features: r.draft.features }) : x))
     toast.success('Saved')
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault()
+    if (!edit.name.trim()) return toast.error('Restaurant name required')
+    setWorking(true)
+    const { error } = await supabase.rpc('admin_update_tenant_info', {
+      p_id: edit.id, p_name: edit.name, p_slug: edit.slug, p_email: edit.email, p_phone: edit.phone, p_address: edit.address,
+    })
+    setWorking(false)
+    if (error) return toast.error(error.message)
+    toast.success('Updated')
+    setEdit(null); load()
+  }
+
+  async function confirmDelete(e) {
+    e.preventDefault()
+    const r = del.row
+    if (del.slug.trim().toLowerCase() !== r.slug.toLowerCase()) return toast.error('Short ID does not match')
+    if (!del.password) return toast.error('Enter your admin password')
+    setWorking(true)
+    try {
+      // verify admin password with a temporary client (keeps current session)
+      const { data: u } = await supabase.auth.getUser()
+      const tmp = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'sb-tmp-verify' },
+      })
+      const { error: pe } = await tmp.auth.signInWithPassword({ email: u?.user?.email, password: del.password })
+      if (pe) throw new Error('Wrong admin password')
+      const { error } = await supabase.rpc('admin_delete_tenant', { p_id: r.id, p_confirm_slug: del.slug.trim() })
+      if (error) throw error
+      toast.success(`${r.name} deleted`)
+      setRows(rs => rs.filter(x => x.id !== r.id))
+      setDel(null)
+    } catch (err) { toast.error(err.message || 'Delete failed') }
+    setWorking(false)
   }
 
   async function uploadLogo(r, e) {
@@ -167,6 +209,8 @@ export default function AdminPage() {
                 📷 Logo
                 <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => uploadLogo(r, e)} disabled={busy[r.id]} />
               </label>
+              <button className="adm-btn" onClick={() => setEdit({ id: r.id, name: r.name || '', slug: r.slug || '', email: r.email || '', phone: r.phone || '', address: r.address || '' })}>✏️ Edit</button>
+              <button className="adm-btn" style={{ color: '#ff6b6b' }} onClick={() => setDel({ row: r, slug: '', password: '' })}>🗑️ Delete</button>
               <button className="adm-btn pri" style={{ marginLeft: 'auto' }} disabled={!isDirty(r) || busy[r.id]} onClick={() => save(r)}>
                 {busy[r.id] ? '⏳' : isDirty(r) ? '💾 Save' : '✓ Saved'}
               </button>
@@ -189,6 +233,55 @@ export default function AdminPage() {
         )
       })}
       {!loading && !shown.length && <div className="adm-sub">No restaurants</div>}
+
+      {edit && (
+        <div style={OVERLAY} onClick={() => !working && setEdit(null)}>
+          <form className="adm-card" style={MODAL} onClick={e => e.stopPropagation()} onSubmit={saveEdit}>
+            <div className="adm-name" style={{ marginBottom: 10 }}>✏️ Edit restaurant</div>
+            <div className="adm-form">
+              <div className="full"><label>Restaurant name *</label><input className="adm-input" value={edit.name} onChange={e => setEdit(v => ({ ...v, name: e.target.value }))} /></div>
+              <div className="full"><label>Short ID</label><input className="adm-input" value={edit.slug} onChange={e => setEdit(v => ({ ...v, slug: e.target.value }))} /></div>
+              <div><label>Email</label><input className="adm-input" type="email" value={edit.email} onChange={e => setEdit(v => ({ ...v, email: e.target.value }))} /></div>
+              <div><label>Phone</label><input className="adm-input" value={edit.phone} onChange={e => setEdit(v => ({ ...v, phone: e.target.value }))} /></div>
+              <div className="full"><label>Address</label><input className="adm-input" value={edit.address} onChange={e => setEdit(v => ({ ...v, address: e.target.value }))} /></div>
+            </div>
+            <div className="adm-row" style={{ marginTop: 12 }}>
+              <button type="button" className="adm-btn" onClick={() => setEdit(null)} disabled={working}>Cancel</button>
+              <button className="adm-btn pri" style={{ marginLeft: 'auto' }} disabled={working}>{working ? '⏳' : '💾 Save'}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {del && (
+        <div style={OVERLAY} onClick={() => !working && setDel(null)}>
+          <form className="adm-card" style={MODAL} onClick={e => e.stopPropagation()} onSubmit={confirmDelete}>
+            <div className="adm-name" style={{ marginBottom: 6, color: '#ff6b6b' }}>🗑️ Delete “{del.row.name}”</div>
+            <div className="adm-sub" style={{ marginBottom: 10 }}>
+              Orders {del.row.orders_count} · Staff {del.row.staff_count}. All data of this restaurant will be permanently removed. This cannot be undone.
+            </div>
+            {del.row.active ? (
+              <div className="adm-sub" style={{ color: '#ffb74d', marginBottom: 10 }}>
+                ⚠️ First turn the Active switch OFF (Suspended) and press 💾 Save, then delete.
+              </div>
+            ) : (
+              <>
+                <label className="adm-sub">Type the short ID <b>{del.row.slug}</b> to confirm</label>
+                <input className="adm-input" style={{ margin: '4px 0 10px' }} value={del.slug} onChange={e => setDel(v => ({ ...v, slug: e.target.value }))} autoComplete="off" />
+                <label className="adm-sub">Your admin password</label>
+                <input className="adm-input" style={{ margin: '4px 0 10px' }} type="password" value={del.password} onChange={e => setDel(v => ({ ...v, password: e.target.value }))} autoComplete="current-password" />
+              </>
+            )}
+            <div className="adm-row">
+              <button type="button" className="adm-btn" onClick={() => setDel(null)} disabled={working}>Cancel</button>
+              <button className="adm-btn" style={{ marginLeft: 'auto', background: '#e53935', color: '#fff', border: 0 }}
+                disabled={working || del.row.active || del.slug.trim().toLowerCase() !== del.row.slug.toLowerCase() || !del.password}>
+                {working ? '⏳ Deleting...' : '🗑️ Delete forever'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }
