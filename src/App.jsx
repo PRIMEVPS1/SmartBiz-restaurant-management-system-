@@ -31,12 +31,13 @@ import AdminPage        from './pages/AdminPage'
 import InstallPrompt    from './components/InstallPrompt'
 import { canAccess, homeFor } from './lib/permissions'
 
-function ProtectedRoute({ children, ready, requireTenant = true }) {
+function ProtectedRoute({ children, ready, isAdmin = false, requireTenant = true }) {
   const user   = useStore(s => s.user)
   const tenant = useStore(s => s.tenant)
   if (!ready) return <div style={{ padding: 40, textAlign: 'center', color: '#9aa7bd' }}>Loading...</div>
   if (!user) return <Navigate to="/login" replace />
-  if (requireTenant && !tenant) return <Navigate to="/register" replace />
+  // Super Admin without a (usable) restaurant → straight to the admin panel
+  if (requireTenant && !tenant) return <Navigate to={isAdmin ? '/admin' : '/register'} replace />
   return children
 }
 
@@ -57,12 +58,17 @@ function HomeRedirect() {
 export default function App() {
   const { setUser, setStaff, setOnline } = useStore()
   const [ready, setReady] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     async function loadStaff(session) {
       const st = useStore.getState()
       st.setUser(session?.user ?? null)
-      if (!session?.user) { st.setStaff(null); st.setTenant(null); return }
+      if (!session?.user) { st.setStaff(null); st.setTenant(null); setIsAdmin(false); return }
+      // is this a SmartBiz platform (Super) admin?
+      let admin = false
+      try { const { data: a } = await supabase.rpc('is_platform_admin'); admin = !!a } catch { admin = false }
+      setIsAdmin(admin)
       const { data, error } = await supabase
         .from('staff').select('*, tenants(*)')
         .eq('auth_id', session.user.id).maybeSingle()
@@ -73,6 +79,11 @@ export default function App() {
         st.setStaff(data); st.setTenant(null); return
       }
       if (data.tenants.active === false) {
+        if (admin) {
+          // Super Admin whose own restaurant is suspended: stay signed in, work from /admin
+          st.setStaff(null); st.setTenant(null)
+          return
+        }
         toast.error('This restaurant account is suspended. Contact SmartBiz support.')
         await supabase.auth.signOut()
         st.logout()
@@ -119,10 +130,10 @@ export default function App() {
       <Routes>
         <Route path="/login"          element={<LoginPage />} />
         <Route path="/register"       element={<RegisterPage />} />
-        <Route path="/admin"          element={<ProtectedRoute ready={ready} requireTenant={false}><AdminPage /></ProtectedRoute>} />
+        <Route path="/admin"          element={<ProtectedRoute ready={ready} isAdmin={isAdmin} requireTenant={false}><AdminPage /></ProtectedRoute>} />
         <Route path="/menu/:qrToken"  element={<CustomerMenu />} />
         <Route path="/" element={
-          <ProtectedRoute ready={ready}><AppShell /></ProtectedRoute>
+          <ProtectedRoute ready={ready} isAdmin={isAdmin}><AppShell /></ProtectedRoute>
         }>
           <Route index                   element={<HomeRedirect />} />
           <Route path="dashboard"        element={<RoleRoute path="/dashboard"><Dashboard /></RoleRoute>} />
