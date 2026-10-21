@@ -30,3 +30,4 @@
 .adm-form label { font-size:11.5px; color:var(--t2,#9aa7bd); display:block; margin-bottom:4px; }
 @media (max-width:560px) { .adm-form { grid-template-columns:1fr; } }
 .adm-stats { font-size:11.5px; color:var(--t2,#9aa7bd); margin-top:8px; }
+a.adm-btn { text-decoration:none; display:inline-block; color:inherit; }
